@@ -1,0 +1,163 @@
+{
+  "version": "1.0.0-dev",
+  "purpose": "Release behavior coverage for a developer-facing coding agent",
+  "scenarios": [
+    {
+      "id": "SCN-001",
+      "name": "Installed CLI startup",
+      "layer": "startup",
+      "automatedBy": "tests/RUN-STARTUP-SMOKE.ps1",
+      "asserts": [
+        "IDEA launcher starts",
+        "help works",
+        "permissions render",
+        "project renders",
+        "clean exit"
+      ]
+    },
+    {
+      "id": "SCN-002",
+      "name": "Natural language docs compliance",
+      "layer": "shell-e2e",
+      "automatedBy": "tests/RUN-SHELL-E2E.ps1",
+      "asserts": [
+        "plain text routes to analysis",
+        "COMPLIANCE MATRIX returned",
+        "/result works"
+      ]
+    },
+    {
+      "id": "SCN-003",
+      "name": "Bugfix with regression test",
+      "layer": "live-e2e",
+      "automatedBy": "tests/RUN-LIVE-E2E.ps1",
+      "asserts": [
+        "agent edits source",
+        "agent adds regression test",
+        "npm test passes",
+        "quality gate passes"
+      ]
+    },
+    {
+      "id": "SCN-004",
+      "name": "Read-only review",
+      "layer": "live-e2e",
+      "automatedBy": "tests/RUN-LIVE-E2E.ps1",
+      "asserts": [
+        "review runs",
+        "git diff unchanged"
+      ]
+    },
+    {
+      "id": "SCN-005",
+      "name": "Read-only analysis",
+      "layer": "live-e2e",
+      "automatedBy": "tests/RUN-LIVE-E2E.ps1",
+      "asserts": [
+        "analysis runs",
+        "working tree stays clean"
+      ]
+    },
+    {
+      "id": "SCN-006",
+      "name": "Harmless native stderr",
+      "layer": "regression",
+      "automatedBy": "tests/VERIFY-NATIVE-STDERR.ps1",
+      "asserts": [
+        "LF/CRLF warning non-fatal",
+        "stdout captured",
+        "exit code authoritative"
+      ]
+    },
+    {
+      "id": "SCN-007",
+      "name": "Runtime identity",
+      "layer": "runtime",
+      "automatedBy": "tests/RUN-REAL-PROJECT-SMOKE.ps1",
+      "asserts": [
+        "installed VERSION matches candidate",
+        "doctor uses installed candidate"
+      ]
+    },
+    {
+      "id": "SCN-008",
+      "name": "Output isolation",
+      "layer": "regression",
+      "automatedBy": "tests/VERIFY-OUTPUT-ISOLATION.ps1",
+      "asserts": [
+        "test output outside package",
+        "test output outside project"
+      ]
+    },
+    {
+      "id": "SCN-009",
+      "name": "Wrapper finalizes incomplete compliance output",
+      "expected": "PARTIAL compliance matrix from repository evidence; never false PASS"
+    },
+    {
+      "id": "SCN-010",
+      "name": "Wrapper promotes incomplete bugfix output only after verification",
+      "expected": "PASS only with changed files, deterministic checks passing, no guardrail violations, and independent review not FAIL"
+    },
+    {
+      "id": "SCN-011",
+      "name": "Transcript mentions compliance matrix but terminal report omits it",
+      "expected": "terminal report is rejected as malformed; recovery/finalizer produces canonical COMPLIANCE MATRIX"
+    },
+    {
+      "id": "SCN-012",
+      "name": "Compliance recovery extracts requirements when Git inventory is incomplete or path-normalization differs",
+      "expected": "docs/requirements.md is scanned directly and REQ-01..REQ-04 are available to wrapper finalizer"
+    },
+    {
+      "id": "SCN-013",
+      "name": "Regression verifier contains a literal $Variable token in a regex",
+      "expected": "sandbox/meta verifier rejects unsafe double-quoted pattern before Windows qualification"
+    },
+    {
+      "id": "SCN-014",
+      "name": "Compliance recovery process fails but repository docs are locally readable",
+      "expected": "wrapper still extracts REQ-01..REQ-04 and writes canonical COMPLIANCE MATRIX; model exit failure remains visible in verification"
+    },
+    {
+      "id": "SCN-015",
+      "name": "Pre-live Windows runtime compliance extractor self-test",
+      "expected": "module-scope extractor returns REQ-01..REQ-04 and emits diagnostic path before install/live E2E"
+    },
+    {
+      "id": "SCN-016",
+      "name": "Live E2E failure diagnostic bundle",
+      "expected": "console + persistent transcript show fixture tree, requirements file, session, model/recovery output, extractor diagnostics and preserved fixture"
+    },
+    {
+      "id": "SCN-017",
+      "name": "Qualification logging must not mutate or contaminate package verification",
+      "expected": "logs are emitted outside package root; package profile scan covers distributable sources only"
+    },
+    {
+      "id": "SCN-018",
+      "name": "Model emits COMPLIANCE MATRIX before FINAL RESULT",
+      "expected": "analysis output is accepted without unnecessary recovery when matrix table and terminal status are both present"
+    },
+    {
+      "id": "SCN-019",
+      "name": "Qualification child script uses named parameters",
+      "expected": "-Profile Full and -Project <path> bind correctly and any ParameterBindingException produces non-zero step status"
+    },
+    {
+      "id": "SCN-020",
+      "name": "Compliance extractor throws on Windows",
+      "expected": "diagnostic file contains exact stage, exception type/message and position before the error propagates"
+    },
+    {
+      "id": "SCN-021",
+      "name": "PowerShell diagnostic string contains variable followed by colon",
+      "expected": "sandbox/regression rejects $variable: and requires ${variable}:"
+    },
+    {
+      "id": "SCN-022",
+      "name": "Iterative development in one stable source directory",
+      "expected": "changes are applied in-place under local-coding-agent; Git provides history/rollback; release version changes only after qualification passes"
+    }
+  ]
+}

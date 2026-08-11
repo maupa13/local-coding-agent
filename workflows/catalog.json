@@ -1,0 +1,181 @@
+{
+  "version": "1.0.0-dev",
+  "workflows": [
+    {
+      "category": "CORE",
+      "order": 10,
+      "name": "analysis",
+      "file": "analyze.md",
+      "description": "Read-only investigation: evidence, root cause, impact, next actions",
+      "mode": "read-only"
+    },
+    {
+      "category": "CORE",
+      "order": 20,
+      "name": "feature",
+      "file": "feature.md",
+      "description": "Implement a production-ready feature: acceptance → code → tests → verify",
+      "mode": "mutating"
+    },
+    {
+      "category": "CORE",
+      "order": 30,
+      "name": "bugfix",
+      "file": "bugfix.md",
+      "description": "Fix an existing defect: reproduce → root cause → regression → minimal fix",
+      "mode": "mutating"
+    },
+    {
+      "category": "CORE",
+      "order": 40,
+      "name": "hotfix",
+      "file": "hotfix.md",
+      "description": "Emergency production patch: minimal diff → focused checks → rollback-ready",
+      "mode": "mutating"
+    },
+    {
+      "category": "CORE",
+      "order": 50,
+      "name": "refactor",
+      "file": "refactor.md",
+      "description": "Refactor internals while preserving behavior and external contracts",
+      "mode": "mutating"
+    },
+    {
+      "category": "QUALITY",
+      "order": 60,
+      "name": "test",
+      "file": "test.md",
+      "description": "Create/repair deterministic tests and verify relevant behavior",
+      "mode": "mutating"
+    },
+    {
+      "category": "QUALITY",
+      "order": 70,
+      "name": "review",
+      "file": "review.md",
+      "description": "Read-only production review: correctness, concurrency, DB, security, tests",
+      "mode": "read-only"
+    },
+    {
+      "category": "QUALITY",
+      "order": 75,
+      "name": "result",
+      "file": "result.md",
+      "description": "Recover a trustworthy final report from session context + real Git state",
+      "mode": "read-only"
+    },
+    {
+      "category": "DOCS",
+      "order": 80,
+      "name": "docs",
+      "file": "docs.md",
+      "description": "Create/update technical docs grounded in the actual repository",
+      "mode": "mutating"
+    },
+    {
+      "category": "DOCS",
+      "order": 90,
+      "name": "business",
+      "file": "business.md",
+      "description": "Create PRD/spec/user flows/acceptance/business documentation",
+      "mode": "mutating"
+    },
+    {
+      "category": "SPECIALIST",
+      "order": 100,
+      "name": "architecture",
+      "file": "architecture.md",
+      "description": "Architecture analysis: options, trade-offs, boundaries, migration path",
+      "mode": "read-only"
+    },
+    {
+      "category": "SPECIALIST",
+      "order": 110,
+      "name": "migration",
+      "file": "migration.md",
+      "description": "Plan/implement safe schema, data, API or event migration",
+      "mode": "mutating"
+    },
+    {
+      "category": "SPECIALIST",
+      "order": 120,
+      "name": "performance",
+      "file": "performance.md",
+      "description": "Measure and improve latency/CPU/GC/DB/N+1/concurrency bottlenecks",
+      "mode": "mutating"
+    },
+    {
+      "category": "SPECIALIST",
+      "order": 130,
+      "name": "security",
+      "file": "security.md",
+      "description": "Review/fix concrete security risks with regression verification",
+      "mode": "mutating"
+    },
+    {
+      "category": "DELIVERY",
+      "order": 200,
+      "name": "deliver-feature",
+      "file": "delivery-feature.md",
+      "description": "Full feature delivery through verification and independent-review readiness",
+      "mode": "mutating"
+    },
+    {
+      "category": "DELIVERY",
+      "order": 210,
+      "name": "deliver-bugfix",
+      "file": "delivery-bugfix.md",
+      "description": "Full bugfix delivery through regression and independent-review readiness",
+      "mode": "mutating"
+    },
+    {
+      "category": "DELIVERY",
+      "order": 220,
+      "name": "deliver-hotfix",
+      "file": "delivery-hotfix.md",
+      "description": "Full hotfix delivery through focused verification and deploy/rollback prep",
+      "mode": "mutating"
+    },
+    {
+      "category": "RELEASE",
+      "order": 300,
+      "name": "release",
+      "file": "release.md",
+      "description": "Generic read-only release gate: classify Feature/Bugfix/Hotfix and GO/NO-GO",
+      "mode": "read-only"
+    },
+    {
+      "category": "RELEASE",
+      "order": 310,
+      "name": "release-feature",
+      "file": "release-feature.md",
+      "description": "Feature Release gate: acceptance, review, E2E, rollout and rollback",
+      "mode": "read-only"
+    },
+    {
+      "category": "RELEASE",
+      "order": 320,
+      "name": "release-bugfix",
+      "file": "release-bugfix.md",
+      "description": "Bugfix Release gate: root cause, regression, blast radius and rollback",
+      "mode": "read-only"
+    },
+    {
+      "category": "RELEASE",
+      "order": 330,
+      "name": "release-hotfix",
+      "file": "release-hotfix.md",
+      "description": "Hotfix Release gate: accepted risk, rollback and post-deploy monitoring",
+      "mode": "read-only"
+    },
+    {
+      "category": "HELP",
+      "order": 900,
+      "name": "workflows",
+      "file": "workflows.md",
+      "description": "Show the workflow catalog, recommended chains, and choose the right workflow",
+      "mode": "read-only"
+    }
+  ]
+}

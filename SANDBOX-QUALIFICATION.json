@@ -1,0 +1,88 @@
+{
+  "version": "1.0.0-dev",
+  "verdict": "PASS",
+  "passed": 16,
+  "failed": 0,
+  "results": [
+    {
+      "name": "version sync",
+      "status": "PASS",
+      "detail": "1.0.0-dev"
+    },
+    {
+      "name": "JSON/test/scenario schema",
+      "status": "PASS",
+      "detail": "44 tests, 22 scenarios"
+    },
+    {
+      "name": "PowerShell single UTF-8 BOM",
+      "status": "PASS",
+      "detail": "61 files"
+    },
+    {
+      "name": "core finalizer contracts",
+      "status": "PASS",
+      "detail": "171 functions, 0 duplicates"
+    },
+    {
+      "name": "release fixture semantics",
+      "status": "PASS",
+      "detail": "baseline PASS -> regression FAIL -> fixed PASS"
+    },
+    {
+      "name": "compliance reference finalizer",
+      "status": "PASS",
+      "detail": "4 REQs; REQ-03 conservatively PARTIAL"
+    },
+    {
+      "name": "terminal compliance transcript scope",
+      "status": "PASS",
+      "detail": "rc.8 contaminated transcript rejected; canonical report accepted"
+    },
+    {
+      "name": "compliance docs discovery/markdown forms",
+      "status": "PASS",
+      "detail": "direct docs scan found REQ-01..REQ-05 across markdown variants"
+    },
+    {
+      "name": "nonzero compliance finalizer",
+      "status": "PASS",
+      "detail": "non-zero model exit still yields conservative local compliance finalization"
+    },
+    {
+      "name": "diagnostic logging/static runtime selftest",
+      "status": "PASS",
+      "detail": "persistent transcript + evidence dump + real PowerShell extractor self-test contracts present"
+    },
+    {
+      "name": "log isolation/package contamination",
+      "status": "PASS",
+      "detail": "runtime logs cannot self-contaminate package profile scan"
+    },
+    {
+      "name": "rc.14 matrix-before-final accepted",
+      "status": "PASS",
+      "detail": "rc.14 matrix-before-final accepted; Run-Step binding no longer uses CLIXML"
+    },
+    {
+      "name": "variable-colon/stable dev workspace",
+      "status": "PASS",
+      "detail": "no unsafe $variable: interpolation; stable dev folder + Git workflow present"
+    },
+    {
+      "name": "StrictMode verifier hygiene",
+      "status": "PASS",
+      "detail": "no unsafe double-quoted literal $variable verifier patterns"
+    },
+    {
+      "name": "wrapper state machine",
+      "status": "PASS",
+      "detail": "7 state transitions"
+    },
+    {
+      "name": "UTF-8 text hygiene",
+      "status": "PASS",
+      "detail": "no known mojibake literal"
+    }
+  ]
+}

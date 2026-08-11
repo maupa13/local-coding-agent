@@ -1,0 +1,333 @@
+{
+  "version": "1.0.0-dev",
+  "schemaVersion": 1,
+  "profiles": {
+    "Quick": [
+      "package",
+      "regression"
+    ],
+    "Full": [
+      "package",
+      "regression",
+      "acceptance",
+      "lifecycle"
+    ],
+    "Release": [
+      "package",
+      "regression",
+      "acceptance",
+      "lifecycle",
+      "runtime"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "REG-001",
+      "area": "powershell",
+      "description": "Windows PowerShell 5.1 UTF-8/parser compatibility",
+      "test": "tests/VERIFY-PS51-COMPAT.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-002",
+      "area": "quality",
+      "description": "Strict-mode variables do not break quality verification",
+      "test": "tests/VERIFY-QUALITY-ENGINE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-003",
+      "area": "launcher",
+      "description": "agent launcher cannot silently resolve to raw cn",
+      "test": "tests/VERIFY-LAUNCHER-MODELS-SKILLS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-004",
+      "area": "idea",
+      "description": "IDEA run configuration uses a resolved PowerShell interpreter",
+      "test": "tests/VERIFY-IDEA-INTEGRATION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-005",
+      "area": "models",
+      "description": "/model install command and Ollama pull path remain available",
+      "test": "tests/VERIFY-LAUNCHER-MODELS-SKILLS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-006",
+      "area": "permissions",
+      "description": "/deps parser and dependency policy remain available",
+      "test": "tests/VERIFY-ENGINEERING-GUARDS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-007",
+      "area": "recovery",
+      "description": "natural result aliases such as и? recover the previous result",
+      "test": "tests/VERIFY-BETA-RELIABILITY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-008",
+      "area": "git",
+      "description": "Git repository detection uses rev-parse top-level",
+      "test": "tests/VERIFY-BETA-RELIABILITY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-009",
+      "area": "compliance",
+      "description": "incomplete docs compliance cannot pass silently",
+      "test": "tests/VERIFY-BETA-RELIABILITY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-010",
+      "area": "terminal",
+      "description": "managed shell suppresses raw Continue TUI/ANSI churn",
+      "test": "tests/VERIFY-COMPACT-UI.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-011",
+      "area": "installer",
+      "description": "installer aborts on failed full package verification",
+      "test": "tests/VERIFY-INSTALL-FAIL-CLOSED.ps1",
+      "tier": "lifecycle"
+    },
+    {
+      "id": "REG-012",
+      "area": "models",
+      "description": "Ollama model pull exposes progress contract",
+      "test": "tests/VERIFY-INSTALL-FAIL-CLOSED.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-013",
+      "area": "harness",
+      "description": "RUN-ALL Full profile log-path construction is executable under Windows PowerShell 5.1",
+      "test": "tests/VERIFY-HARNESS-SMOKE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-014",
+      "area": "runtime",
+      "description": "Native stderr warnings such as Git LF/CRLF notices do not abort managed workflows under Windows PowerShell 5.1",
+      "test": "tests/VERIFY-NATIVE-STDERR.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "ACC-001",
+      "area": "repository",
+      "description": "generic acceptance repository fixture",
+      "test": "tests/NEW-ACCEPTANCE-REPO.ps1",
+      "tier": "acceptance"
+    },
+    {
+      "id": "ACC-002",
+      "area": "rust",
+      "description": "nested Rust manifest/guard fixture",
+      "test": "tests/NEW-RUST-GUARD-REPO.ps1",
+      "tier": "acceptance"
+    },
+    {
+      "id": "ACC-003",
+      "area": "docs",
+      "description": "external documentation source fixture",
+      "test": "tests/NEW-DOC-SOURCE-REPO.ps1",
+      "tier": "acceptance"
+    },
+    {
+      "id": "ACC-004",
+      "area": "compliance",
+      "description": "requirements-to-code-to-tests compliance fixture",
+      "test": "tests/NEW-COMPLIANCE-REPO.ps1",
+      "tier": "acceptance"
+    },
+    {
+      "id": "REG-015",
+      "area": "release",
+      "description": "Release profile cannot qualify without live model E2E and installed runtime version match",
+      "test": "tests/VERIFY-RELEASE-GATE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "ACC-005",
+      "area": "live-e2e",
+      "description": "Real model compliance -> bugfix -> deterministic tests -> review on isolated fixture",
+      "test": "tests/RUN-LIVE-E2E.ps1",
+      "tier": "runtime"
+    },
+    {
+      "id": "REG-016",
+      "area": "runtime-identity",
+      "description": "Activation and doctor reject/identify an installed runtime that does not match the candidate package",
+      "test": "tests/VERIFY-RELEASE-GATE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-017",
+      "area": "fixtures",
+      "description": "Acceptance fixture generators are repeatable, isolated, and do not fail on nonessential Git setup",
+      "test": "tests/VERIFY-FIXTURE-GENERATORS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-018",
+      "area": "test-output",
+      "description": "Harness and live E2E outputs stay outside candidate/project roots so IDE tooling cannot treat test-results directories as source files",
+      "test": "tests/VERIFY-OUTPUT-ISOLATION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-019",
+      "area": "test-architecture",
+      "description": "VERIFY-PACKAGE remains a static/package gate and does not execute runtime/native integration probes",
+      "test": "VERIFY-PACKAGE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "ACC-006",
+      "area": "startup",
+      "description": "Installed IDEA/CLI launcher starts, local commands work, and /exit terminates cleanly",
+      "test": "tests/RUN-STARTUP-SMOKE.ps1",
+      "tier": "runtime"
+    },
+    {
+      "id": "ACC-007",
+      "area": "shell-e2e",
+      "description": "Real installed shell routes natural language docs analysis, returns compliance result, supports /result and local capability help",
+      "test": "tests/RUN-SHELL-E2E.ps1",
+      "tier": "runtime"
+    },
+    {
+      "id": "REG-020",
+      "area": "semantic-recovery",
+      "description": "Empty managed model output triggers deterministic recovery instead of false semantic PASS",
+      "test": "tests/VERIFY-EMPTY-CAPTURE-RECOVERY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-021",
+      "area": "test-harness",
+      "description": "Every test matrix contract uses the canonical required schema before StrictMode property access",
+      "test": "tests/VERIFY-TEST-MATRIX-SCHEMA.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-022",
+      "area": "semantic-finalization",
+      "description": "Incomplete model output is finalized conservatively by the wrapper and mutating work can be promoted only after deterministic verification",
+      "test": "tests/VERIFY-WRAPPER-FINALIZER.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-023",
+      "area": "process-encoding",
+      "description": "Continue child process stdout and stderr are captured as UTF-8 to prevent mojibake in Windows logs",
+      "test": "tests/VERIFY-UTF8-CAPTURE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-024",
+      "area": "compliance-regression",
+      "description": "Beta reliability contract tracks wrapper-owned conservative compliance finalization rather than obsolete pre-finalizer failure text",
+      "test": "tests/VERIFY-COMPLIANCE-FINALIZER-CONTRACT.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-025",
+      "area": "sandbox-qualification",
+      "description": "Sandbox qualification derives the candidate version from VERSION instead of hardcoding an RC number",
+      "test": "tests/VERIFY-SANDBOX-VERSION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-026",
+      "area": "semantic-validation",
+      "description": "Compliance validation inspects only the last terminal FINAL RESULT block, so rule/tool transcript text cannot fake a COMPLIANCE MATRIX",
+      "test": "tests/VERIFY-TERMINAL-COMPLIANCE-REPORT.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-027",
+      "area": "compliance-finalization",
+      "description": "Deterministic compliance recovery discovers docs independently of Git inventory and parses common Markdown REQ forms",
+      "test": "tests/VERIFY-COMPLIANCE-REQUIREMENT-EXTRACTION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-028",
+      "area": "test-harness",
+      "description": "Verifier assertion/regex patterns cannot use double-quoted literal PowerShell variable tokens that interpolate under StrictMode",
+      "test": "tests/VERIFY-STRICTMODE-TEST-HYGIENE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-029",
+      "area": "compliance-finalization",
+      "description": "Deterministic compliance finalization still runs when model/recovery exits non-zero, while preserving that failure as evidence and never claiming false PASS",
+      "test": "tests/VERIFY-COMPLIANCE-FINALIZER-NONZERO.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-030",
+      "area": "compliance-runtime",
+      "description": "Actual PowerShell module runtime extracts REQ-01..REQ-04 from the release fixture before any live model E2E",
+      "test": "tests/VERIFY-COMPLIANCE-RUNTIME-SELFTEST.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-031",
+      "area": "diagnostics",
+      "description": "Qualification and live E2E failures emit persistent environment, evidence, model, recovery, requirement-extraction and fixture diagnostics",
+      "test": "tests/VERIFY-DIAGNOSTIC-LOGGING.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-032",
+      "area": "diagnostic-isolation",
+      "description": "Qualification diagnostics are written outside the immutable package root and package scans ignore transient runtime directories",
+      "test": "tests/VERIFY-LOG-ISOLATION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-033",
+      "area": "compliance-validation",
+      "description": "A canonical COMPLIANCE MATRIX immediately preceding the terminal FINAL RESULT is accepted while terminal semantic status remains authoritative",
+      "test": "tests/VERIFY-COMPLIANCE-MATRIX-LAYOUT.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-034",
+      "area": "qualification-harness",
+      "description": "Qualification Run-Step preserves native PowerShell named-argument binding and authoritative child exit codes while keeping per-step logs",
+      "test": "tests/VERIFY-QUALIFY-ARGUMENT-BINDING.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-035",
+      "area": "compliance-diagnostics",
+      "description": "Compliance requirement extraction emits stage-by-stage diagnostics and avoids the PS5.1-sensitive TrimStart(char[]) path",
+      "test": "tests/VERIFY-EXTRACTOR-STAGED-DIAGNOSTICS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-036",
+      "area": "powershell-syntax",
+      "description": "PowerShell scripts must not contain unsafe double-quoted $variable: interpolation; use ${variable}: instead",
+      "test": "tests/VERIFY-PS-VARIABLE-COLON-HYGIENE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-037",
+      "area": "development-workspace",
+      "description": "Development source remains in one stable folder; Git/history replaces per-RC directory versioning until release qualification passes",
+      "test": "tests/VERIFY-DEV-WORKSPACE.ps1",
+      "tier": "regression"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+logs/
+evidence/
+results/
+test-results/
+*.log
+*.tmp
