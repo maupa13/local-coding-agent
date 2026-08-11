@@ -16,7 +16,7 @@ try{
   $m=Import-Module $modulePath -Force -DisableNameChecking -PassThru
   if(-not $m){throw '[FAIL] LocalCodingAgent module import failed'}
 
-  $requirements=@(Test-LocalCodingAgentComplianceExtractor -ProjectRoot $tempRoot -DiagnosticPath $diag)
+  $requirements=[object[]](Test-LocalCodingAgentComplianceExtractor -ProjectRoot $tempRoot -DiagnosticPath $diag)
 
   $ids=@($requirements|ForEach-Object{[string]$_.Id}|Sort-Object -Unique)
   Write-Host "[INFO] runtime requirement IDs: $($ids -join ', ')" -ForegroundColor DarkGray
@@ -37,6 +37,13 @@ try{
 
   Write-Host '[PASS] runtime compliance extractor returned REQ-01..REQ-04 under current Windows PowerShell' -ForegroundColor Green
   Write-Host 'Compliance runtime self-test PASS' -ForegroundColor Cyan
+}catch{
+  Write-Host ("[FAIL] runtime extractor exception: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message) -ForegroundColor Red
+  if(Test-Path -LiteralPath $diag){
+    Write-Host '[DIAGNOSTIC] extractor trace:' -ForegroundColor Yellow
+    Get-Content -LiteralPath $diag -ErrorAction SilentlyContinue|ForEach-Object{Write-Host ("  "+$_)}
+  }
+  throw
 }finally{
   Remove-Module LocalCodingAgent -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue

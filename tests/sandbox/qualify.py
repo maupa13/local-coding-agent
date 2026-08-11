@@ -332,6 +332,7 @@ def test_diagnostic_logging_and_runtime_selftest_contract():
         ("RepositoryRoot exists:" in module and "DocsRoot exists:" in module, "extractor root diagnostics missing"),
         ("requirement matches:" in module and "Unique requirements:" in module, "extractor match diagnostics missing"),
         ("Test-LocalCodingAgentComplianceExtractor" in runtime_test, "runtime self-test does not invoke real extractor helper"),
+        ("Test-LocalCodingAgentComplianceResult" in module, "behavioral compliance validator helper missing"),
         ("REQ-01" in runtime_test and "REQ-04" in runtime_test, "runtime self-test expected IDs missing"),
     ]
     for cond,msg in checks:

@@ -4,21 +4,19 @@
 
 Development policy:
 - One canonical source directory: `C:\AI\local-coding-agent`.
-- No per-change RC directories.
-- Git checkpoints provide development history and rollback.
-- VERSION remains `1.0.0-dev` until the real Windows qualification passes all 7/7 stages.
-- Only after 7/7 PASS is a release-candidate version created.
+- Git checkpoints provide development history/rollback.
+- VERSION remains `1.0.0-dev` until real Windows qualification reaches 7/7 PASS.
 
 Current checks:
-- Core functions: 171
+- Core functions: 173
 - PowerShell files: 61
 - Test contracts: 44
 - Developer scenarios: 22
-- Duplicate functions: 0
-- Missing referenced tests: 0
-- Stable development workspace contract: PASS
-- DEV.ps1 workflow: PASS
-- Version-folder coupling in production scripts: NONE
+- Generic.List -> object[] compliance boundary: PASS
+- Behavioral compliance-matrix validator helper: PASS
+- Log-isolation regex interpolation fix: PASS
+- PowerShell parser hygiene filters only .ps1/.psm1: PASS
+- Stable dev workspace contract: PASS
 - Sandbox qualification: PASS
 
-Target Windows qualification remains authoritative for PowerShell 5.1, Continue/Ollama, IntelliJ IDEA and live coding behavior.
+Target Windows PowerShell 5.1 remains authoritative for runtime execution.

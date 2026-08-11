@@ -1219,7 +1219,9 @@ function Get-AgentComplianceRequirements {
         foreach($row in @($unique)){Add-ReqDiag "requirement: $($row.Id) from $($row.Document)"}
         $stage='done'
         Add-ReqDiag 'completed'
-        return @($unique)
+        $result=New-Object 'System.Object[]' $unique.Count
+        if($unique.Count -gt 0){$unique.CopyTo($result,0)}
+        return $result
     }catch{
         $type=$_.Exception.GetType().FullName
         $message=$_.Exception.Message
@@ -1236,6 +1238,16 @@ function Test-LocalCodingAgentComplianceExtractor {
         [string]$DiagnosticPath
     )
     return @(Get-AgentComplianceRequirements -RepositoryRoot $ProjectRoot -DiagnosticPath $DiagnosticPath)
+}
+
+function Test-LocalCodingAgentComplianceResult {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$WorkflowName,
+        [Parameter(Mandatory)][string]$TaskText,
+        [Parameter(Mandatory)][string]$Text
+    )
+    return [bool](Test-AgentComplianceResult -WorkflowName $WorkflowName -TaskText $TaskText -Text $Text)
 }
 
 function Get-AgentComplianceEvidence {
@@ -3340,7 +3352,7 @@ This quick lane is read-only and does not overwrite the main workflow state.
 }
 
 Export-ModuleMember -Function @(
-    'Invoke-ContinueAgent','Invoke-AgentWorkflow','Test-LocalCodingAgentComplianceExtractor',
+    'Invoke-ContinueAgent','Invoke-AgentWorkflow','Test-LocalCodingAgentComplianceExtractor','Test-LocalCodingAgentComplianceResult',
     'Start-LocalCodingAgent','Install-AgentIdeaIntegration','Install-AgentIdeaIntegrations','Find-AgentIdeaProjects','Show-AgentIdeaIntegration','Remove-AgentIdeaIntegration','agent-idea','agent-idea-all','agent','agent-fast','agent-tui','agent-ask','agent-plan','agent-auto','agent-resume',
     'agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result',
     'agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix',

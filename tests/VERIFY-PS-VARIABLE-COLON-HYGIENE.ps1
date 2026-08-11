@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
-$files=Get-ChildItem -LiteralPath $root -Recurse -File -Include *.ps1,*.psm1
+$files=@(Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {$_.Extension -in @('.ps1','.psm1')})
 $errors=New-Object 'System.Collections.Generic.List[string]'
 foreach($file in $files){
   $tokens=$null
