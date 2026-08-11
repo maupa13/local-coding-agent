@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [string]$ConfigPath,
   [string]$Model = 'qwen3.5:9b-q4_K_M'

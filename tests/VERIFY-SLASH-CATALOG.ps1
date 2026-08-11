@@ -6,7 +6,8 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $catalogPath = Join-Path $root 'workflows\catalog.json'
 if (-not (Test-Path $catalogPath)) { throw "Missing catalog: $catalogPath" }
 $catalog = Get-Content $catalogPath -Raw | ConvertFrom-Json
-if ($catalog.version -ne '1.0.0-dev') { throw "Unexpected catalog version: $($catalog.version)" }
+$version=(Get-Content -LiteralPath (Join-Path $root 'VERSION') -Raw).Trim()
+if ($catalog.version -ne $version) { throw "Catalog version mismatch: expected $version, got $($catalog.version)" }
 if (@($catalog.workflows).Count -ne 22) { throw "Expected 22 workflows, got $(@($catalog.workflows).Count)" }
 $configs = @('config.yaml','config-agent.yaml','config-agent-fast.yaml')
 foreach ($item in $catalog.workflows) {

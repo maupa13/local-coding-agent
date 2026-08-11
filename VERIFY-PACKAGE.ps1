@@ -30,7 +30,7 @@ Check 'PowerShell syntax' {
  }
 }
 Check 'Version consistency' {
- $v=(Get-Content (Join-Path $root 'VERSION') -Raw).Trim();if($v -ne '1.0.0-dev'){throw $v}
+ $v=(Get-Content (Join-Path $root 'VERSION') -Raw).Trim();if($v -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$'){throw "invalid VERSION: $v"}
  $cat=Get-Content (Join-Path $root 'workflows\catalog.json') -Raw|ConvertFrom-Json;if($cat.version -ne $v){throw 'catalog mismatch'}
  foreach($cfg in @('config.yaml','config-agent.yaml','config-agent-fast.yaml')){if((Get-Content (Join-Path $root "config\$cfg") -Raw)-notmatch [regex]::Escape("version: $v")){throw "$cfg mismatch"}}
 }
@@ -71,14 +71,14 @@ Check 'Slash prompts synchronized' {
  $cat=Get-Content (Join-Path $root 'workflows\catalog.json') -Raw|ConvertFrom-Json
  foreach($cfg in @('config.yaml','config-agent.yaml','config-agent-fast.yaml')){
   $text=Get-Content (Join-Path $root "config\$cfg") -Raw
-  foreach($i in $cat.workflows){if($text -notmatch "(?m)^- name: $([regex]::Escape([string]$i.name))$"){throw "$cfg missing /$($i.name)"}}
+  foreach($i in $cat.workflows){if($text -notmatch "(?m)^- name: $([regex]::Escape([string]$i.name))\r?$"){throw "$cfg missing /$($i.name)"}}
  }
 }
 Check 'Distribution self-target guard' {$m=Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw;if($m -notmatch 'is the Local Coding Agent distribution package'){throw 'guard missing'}}
 Check 'Low-prompt safe permission profile' {
  $t=Get-Content (Join-Path $root 'config\permissions.yaml') -Raw
- if($t -notmatch '(?m)^- Bash\(\*\)$'){throw 'Bash automatic allow missing'}
- if($t -notmatch '(?m)^ask:\s*\[\]\s*$'){throw 'ask list is not empty'}
+ if($t -notmatch '(?m)^- Bash\(\*\)\r?$'){throw 'Bash automatic allow missing'}
+ if($t -notmatch '(?m)^ask:\s*\[\]\s*\r?$'){throw 'ask list is not empty'}
  if($t -notmatch 'Bash\(git push\*\)'){throw 'git push guard missing'}
  if($t -notmatch 'Bash\(cargo update\*\)'){throw 'dependency guard missing'}
 }

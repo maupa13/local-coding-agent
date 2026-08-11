@@ -1,4 +1,4 @@
-﻿# Local Coding Agent 1.0.0-dev.1
+﻿# Local Coding Agent 1.0.0-dev.2
 
 > Bootstrap fix: use `SETUP.cmd` (or `SETUP.ps1`) for first setup. The preflight now detects Continue CLI/Ollama/model readiness and explains the current Continue first-run authentication requirement instead of failing silently.
 

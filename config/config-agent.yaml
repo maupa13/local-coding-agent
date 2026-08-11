@@ -1,5 +1,5 @@
 ﻿name: Local Coding Agent CLI
-version: 1.0.0-dev
+version: 1.0.0-dev.2
 schema: v1
 models:
 - name: Local Agent (qwen3.5:9b-q4_K_M)
