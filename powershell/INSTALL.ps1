@@ -12,7 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PackageRoot = Split-Path -Parent $PSScriptRoot
 $Version = (Get-Content (Join-Path $PackageRoot 'VERSION') -Raw).Trim()
 $ContinueHome = Join-Path $env:USERPROFILE '.continue'
 $AgentHome = Join-Path $ContinueHome 'local-coding-agent'
@@ -25,7 +25,7 @@ Write-Host "== Local Coding Agent $Version installer ==" -ForegroundColor Cyan
 # VERIFY-PACKAGE failure. Run verification in a child Windows PowerShell process
 # so VERIFY-PACKAGE.ps1 can use exit codes without terminating this installer.
 Write-Host '[preflight] Running full package verification...' -ForegroundColor DarkGray
-$verifyScript = Join-Path $PackageRoot 'VERIFY-PACKAGE.ps1'
+$verifyScript = Join-Path $PackageRoot 'powershell\VERIFY-PACKAGE.ps1'
 $windowsPowerShell = Join-Path $PSHOME 'powershell.exe'
 if (-not (Test-Path $windowsPowerShell)) {
     $windowsPowerShell = (Get-Command powershell.exe -ErrorAction Stop).Source
@@ -171,9 +171,15 @@ New-Item -ItemType Directory -Force -Path $AgentHome,(Join-Path $AgentHome 'work
 Copy-Item (Join-Path $PackageRoot 'workflows\*.md') (Join-Path $AgentHome 'workflows') -Force
 Copy-Item (Join-Path $PackageRoot 'skills\*.md') (Join-Path $AgentHome 'skills') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\LocalCodingAgent.psm1') (Join-Path $AgentHome 'LocalCodingAgent.psm1') -Force
+# Install the manifest beside the implementation. Consumers import the manifest
+# so private helpers cannot accidentally become part of the supported API.
+Copy-Item (Join-Path $PackageRoot 'powershell\LocalCodingAgent.psd1') (Join-Path $AgentHome 'LocalCodingAgent.psd1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\OllamaAgentLoop.ps1') (Join-Path $AgentHome 'OllamaAgentLoop.ps1') -Force
+Copy-Item (Join-Path $PackageRoot 'powershell\WorkflowState.ps1') (Join-Path $AgentHome 'WorkflowState.ps1') -Force
+Copy-Item (Join-Path $PackageRoot 'powershell\ArtifactAnalysis.ps1') (Join-Path $AgentHome 'ArtifactAnalysis.ps1') -Force
+Copy-Item (Join-Path $PackageRoot 'config\work-item-workflows.json') (Join-Path $AgentHome 'work-item-workflows.json') -Force
 Copy-Item (Join-Path $PackageRoot 'integrations\IDEA-LAUNCH.ps1') (Join-Path $AgentHome 'IDEA-LAUNCH.ps1') -Force
-Copy-Item (Join-Path $PackageRoot 'UNINSTALL.ps1') (Join-Path $AgentHome 'UNINSTALL.ps1') -Force
+Copy-Item (Join-Path $PackageRoot 'powershell\UNINSTALL.ps1') (Join-Path $AgentHome 'UNINSTALL.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'workflows\catalog.json') (Join-Path $AgentHome 'catalog.json') -Force
 Copy-Item (Join-Path $PackageRoot 'VERSION') (Join-Path $AgentHome 'VERSION') -Force
 @{
@@ -194,7 +200,7 @@ if (-not $SkipProfile) {
     $end = '# <<< LOCAL CODING AGENT V2 <<<'
     $pattern = '(?s)' + [regex]::Escape($start) + '.*?' + [regex]::Escape($end) + '\s*'
     $content = [regex]::Replace($content,$pattern,'')
-    $module = (Join-Path $AgentHome 'LocalCodingAgent.psm1').Replace("'","''")
+    $module = (Join-Path $AgentHome 'LocalCodingAgent.psd1').Replace("'","''")
     $block = @"
 $start
 `$legacyAgentFunctions = @('agent','agent-idea','agent-idea-all','agent-fast','agent-tui','agent-ask','agent-team','agent-plan','agent-auto','agent-resume','agent-check','agent-build','agent-one','agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result','agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix','agent-docs','agent-business','agent-architecture','agent-migration','agent-performance','agent-security','agent-deliver-feature','agent-deliver-bugfix','agent-deliver-hotfix','agent-init','agent-help','agent-doctor','agent-workflows')
@@ -212,7 +218,7 @@ Write-Host "Backup: $Backup" -ForegroundColor DarkGray
 Write-Host "Installation complete: $Version" -ForegroundColor Green
 Write-Host ''
 try {
-    & (Join-Path $PackageRoot 'ACTIVATE.ps1')
+    & (Join-Path $PackageRoot 'powershell\ACTIVATE.ps1')
     $agentCmd=Get-Command agent -ErrorAction Stop
     if($agentCmd.CommandType -ne 'Alias' -or $agentCmd.Definition -ne 'Start-LocalCodingAgent'){throw "agent launcher collision: $($agentCmd.CommandType) $($agentCmd.Definition)"}
     Write-Host '[PASS] Managed agent launcher owns the agent command.' -ForegroundColor Green
@@ -224,7 +230,7 @@ try {
 Write-Host ''
 
 try {
-    Import-Module (Join-Path $AgentHome 'LocalCodingAgent.psm1') -Global -Force -DisableNameChecking
+    Import-Module (Join-Path $AgentHome 'LocalCodingAgent.psd1') -Global -Force -DisableNameChecking
     if($IdeaProject){Install-AgentIdeaIntegration -Project $IdeaProject | Out-Null}
     if(-not $SkipIdeaAutoIntegration){
         $roots=@()

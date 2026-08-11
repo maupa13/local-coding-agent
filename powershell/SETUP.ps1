@@ -5,7 +5,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$root=Split-Path -Parent $MyInvocation.MyCommand.Path
+$root=Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 Write-Host '== Local Coding Agent bootstrap ==' -ForegroundColor Cyan

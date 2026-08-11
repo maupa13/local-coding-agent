@@ -7,7 +7,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$modulePath = Join-Path $env:USERPROFILE '.continue\local-coding-agent\LocalCodingAgent.psm1'
+$modulePath = Join-Path $env:USERPROFILE '.continue\local-coding-agent\LocalCodingAgent.psd1'
 if (-not (Test-Path -LiteralPath $modulePath)) {
     throw "Installed Local Coding Agent module was not found: $modulePath. Run INSTALL.ps1 first."
 }

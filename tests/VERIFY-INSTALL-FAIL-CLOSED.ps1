@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$i=Get-Content (Join-Path $root 'INSTALL.ps1') -Raw
+$i=Get-Content (Join-Path $root 'powershell\INSTALL.ps1') -Raw
 $need=@(
  'Running full package verification',
  'VERIFY-PACKAGE.ps1',

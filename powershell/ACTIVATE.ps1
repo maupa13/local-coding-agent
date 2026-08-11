@@ -2,14 +2,14 @@
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$PackageRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$PackageRoot = Split-Path -Parent $PSScriptRoot
 $CandidateVersion = (Get-Content -LiteralPath (Join-Path $PackageRoot 'VERSION') -Raw).Trim()
 $ContinueHome = Join-Path $env:USERPROFILE '.continue'
 $RuntimeVersionPath = Join-Path $ContinueHome 'local-coding-agent\VERSION'
 if(-not(Test-Path -LiteralPath $RuntimeVersionPath)){ throw "Installed runtime VERSION is missing. Candidate $CandidateVersion is not installed; run INSTALL.ps1 successfully first." }
 $InstalledVersion = (Get-Content -LiteralPath $RuntimeVersionPath -Raw).Trim()
 if($InstalledVersion -ne $CandidateVersion){ throw "Installed runtime version '$InstalledVersion' does not match candidate '$CandidateVersion'. INSTALL.ps1 did not complete for this candidate." }
-$ModulePath = Join-Path $ContinueHome 'local-coding-agent\LocalCodingAgent.psm1'
+$ModulePath = Join-Path $ContinueHome 'local-coding-agent\LocalCodingAgent.psd1'
 if (-not (Test-Path $ModulePath)) { throw "Installed module not found: $ModulePath. Run INSTALL.ps1 first." }
 # Remove stale legacy functions from the current shell, then import managed module globally.
 $legacy = @(

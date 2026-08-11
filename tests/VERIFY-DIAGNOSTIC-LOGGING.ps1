@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$qualify=Get-Content -LiteralPath (Join-Path $root 'QUALIFY-RELEASE.ps1') -Raw
+$qualify=Get-Content -LiteralPath (Join-Path $root 'powershell\QUALIFY-RELEASE.ps1') -Raw
 $live=Get-Content -LiteralPath (Join-Path $root 'tests\RUN-LIVE-E2E.ps1') -Raw
 $module=Get-Content -LiteralPath (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
 

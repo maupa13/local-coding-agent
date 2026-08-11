@@ -3,8 +3,8 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$qualify=Get-Content -LiteralPath (Join-Path $root 'QUALIFY-RELEASE.ps1') -Raw
-$verify=Get-Content -LiteralPath (Join-Path $root 'VERIFY-PACKAGE.ps1') -Raw
+$qualify=Get-Content -LiteralPath (Join-Path $root 'powershell\QUALIFY-RELEASE.ps1') -Raw
+$verify=Get-Content -LiteralPath (Join-Path $root 'powershell\VERIFY-PACKAGE.ps1') -Raw
 
 function Need([string]$Text,[string]$Pattern,[string]$Name){
   if($Text -notmatch $Pattern){throw "[FAIL] $Name"}

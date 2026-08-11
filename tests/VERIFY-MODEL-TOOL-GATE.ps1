@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$dev=Get-Content -LiteralPath (Join-Path $root 'DEV.ps1') -Raw
+$dev=Get-Content -LiteralPath (Join-Path $root 'powershell\DEV.ps1') -Raw
 $module=Get-Content -LiteralPath (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
 $config=Get-Content -LiteralPath (Join-Path $root 'config\config-agent.yaml') -Raw
 $smoke=Get-Content -LiteralPath (Join-Path $root 'tests\RUN-CONTINUE-TOOL-SMOKE.ps1') -Raw

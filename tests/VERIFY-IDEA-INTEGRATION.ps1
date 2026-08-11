@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $module = Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
-$installer = Get-Content (Join-Path $root 'INSTALL.ps1') -Raw
+$installer = Get-Content (Join-Path $root 'powershell\INSTALL.ps1') -Raw
 $launcher = Get-Content (Join-Path $root 'integrations\IDEA-LAUNCH.ps1') -Raw
 $helper = Get-Content (Join-Path $root 'IDEA-INTEGRATE.ps1') -Raw
 $needles = @(

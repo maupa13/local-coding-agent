@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $runtimeHome=Join-Path $HOME '.continue\local-coding-agent'
-$runtimeModule=Join-Path $runtimeHome 'LocalCodingAgent.psm1'
+$runtimeModule=Join-Path $runtimeHome 'LocalCodingAgent.psd1'
 $runtimeVersion=Join-Path $runtimeHome 'VERSION'
 $expectedVersion=(Get-Content (Join-Path $root 'VERSION') -Raw).Trim()
 if(-not(Test-Path -LiteralPath $runtimeModule)){throw 'Installed runtime not found. Install the candidate build first.'}
@@ -142,7 +142,7 @@ try{
   $currentWorkflow='analysis'
   $currentStarted=Get-Date
   $t1=$currentStarted
-  Invoke-AgentWorkflow -Workflow 'analyze' -DisplayWorkflow 'analysis' -Task @('Проанализируй папку docs и проект на соответствие документации. Построй полную COMPLIANCE MATRIX для каждого REQ с evidence из кода и тестов. Ничего не меняй.') -ReadOnly -Headless -Managed -ProjectRoot $FixturePath
+  Invoke-AgentWorkflow -Workflow 'analyze' -DisplayWorkflow 'analysis' -Task @('Read docs/requirements.md, both src files and both test files. Build a COMPLIANCE MATRIX for REQ-01 through REQ-08 with exact code/test evidence. Do not modify files. Once those five files are read, do not search for anything else; produce the final report.') -ReadOnly -Headless -Managed -ProjectRoot $FixturePath
   $analysis=Assert-Run -Workflow 'analysis' -After $t1 -AllowedStatuses @('PASS','PARTIAL','FAIL') -RequireCompliance
   $afterAnalysis=((Invoke-LiveNative -Name 'git status after analysis' -Command { git -C $FixturePath status --porcelain })|Out-String).Trim()
   if($afterAnalysis){throw "Read-only /analysis modified the fixture: $afterAnalysis"}
@@ -151,17 +151,21 @@ try{
   $currentWorkflow='bugfix'
   $currentStarted=Get-Date
   $t2=$currentStarted
-  Invoke-AgentWorkflow -Workflow 'bugfix' -DisplayWorkflow 'bugfix' -Task @('Исправь дефект REQ-03 в SessionStore.clear() и добавь недостающий regression test для clear. Не меняй требования. Доведи npm test до PASS.') -Headless -Managed -ProjectRoot $FixturePath
+  Invoke-AgentWorkflow -Workflow 'bugfix' -DisplayWorkflow 'bugfix' -Task @('Implement REQ-01 through REQ-08 from docs/requirements.md. Read the existing two source and two test files first. Fix validation, TTL expiry boundary, selective clear, clearExpired count, TokenService unique ids/delegation/revoke, and add meaningful node:test regression coverage. Preserve CommonJS exports and package.json. Re-read every changed file and run npm test until ExitCode: 0.') -Headless -Managed -ProjectRoot $FixturePath
   $bugfix=Assert-Run -Workflow 'bugfix' -After $t2 -AllowedStatuses @('PASS') -RequireQualityPass
 
   Push-Location $FixturePath
   try{
     [void](Invoke-LiveNative -Name 'npm test after bugfix' -Command { npm test })
-    $diff=((Invoke-LiveNative -Name 'git diff after bugfix' -Command { git diff -- src/session-store.js tests/session-store.test.js })|Out-String)
+    $diff=((Invoke-LiveNative -Name 'git diff after bugfix' -Command { git diff -- src/session-store.js src/token-service.js tests/session-store.test.js tests/token-service.test.js })|Out-String)
     if([string]::IsNullOrWhiteSpace($diff)){throw 'Bugfix produced no source/test diff.'}
-    if($diff -notmatch 'clear'){throw 'Bugfix diff does not contain clear behavior.'}
+    foreach($needle in @('clearExpired','expiresAt','sess_','assert.throws')){if($diff -notmatch [regex]::Escape($needle)){throw "Bugfix diff lacks required behavior/test evidence: $needle"}}
+    $changed=@(git diff --name-only)
+    foreach($required in @('src/session-store.js','src/token-service.js','tests/session-store.test.js','tests/token-service.test.js')){if($changed -notcontains $required){throw "Bugfix did not modify required file: $required"}}
+    $testSource=(Get-Content -LiteralPath (Join-Path $FixturePath 'tests\session-store.test.js') -Raw)+(Get-Content -LiteralPath (Join-Path $FixturePath 'tests\token-service.test.js') -Raw)
+    if(([regex]::Matches($testSource,"(?m)^test\(")).Count -lt 7){throw 'Bugfix added insufficient behavioral regression coverage (expected at least 7 tests).'}
   }finally{Pop-Location}
-  Write-Host '[PASS] fixture regression test passes after real agent bugfix' -ForegroundColor Green
+  Write-Host '[PASS] fixture implementation and 7+ behavioral tests pass after real agent work' -ForegroundColor Green
 
   $beforeReview=((Invoke-LiveNative -Name 'git diff before review' -Command { git -C $FixturePath diff --no-ext-diff })|Out-String)
   $currentWorkflow='review'

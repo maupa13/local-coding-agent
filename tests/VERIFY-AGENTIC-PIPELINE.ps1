@@ -4,8 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $module=Get-Content -LiteralPath (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
-$activate=Get-Content -LiteralPath (Join-Path $root 'ACTIVATE.ps1') -Raw
-$install=Get-Content -LiteralPath (Join-Path $root 'INSTALL.ps1') -Raw
+$activate=Get-Content -LiteralPath (Join-Path $root 'powershell\ACTIVATE.ps1') -Raw
+$install=Get-Content -LiteralPath (Join-Path $root 'powershell\INSTALL.ps1') -Raw
 function Need([string]$Name,[string]$Needle,[string]$Text=$module){if(-not $Text.Contains($Needle)){throw "[FAIL] $Name"}}
 
 Need 'team pipeline function' 'function Invoke-AgentTeamPipeline'
@@ -20,7 +20,11 @@ Need 'tester role' "role='tester'"
 Need 'reviewer role' "role='reviewer'"
 Need 'fresh planner workflow' "Invoke-AgentWorkflow -Workflow 'analyze'"
 Need 'fresh reviewer workflow' "Invoke-AgentWorkflow -Workflow 'review'"
-Need 'pipeline stops on blocking phase' 'if($phaseStatus -in @(''BLOCKED'',''FAIL''))'
+Need 'pipeline stops on blocked implementation' "if(`$phaseStatus -eq 'BLOCKED')"
+Need 'pipeline stops on failed implementation' "if(`$phaseStatus -eq 'FAIL')"
+Need 'pipeline owns lifecycle record' 'workItem=$workItem'
+Need 'deterministic verification transition' "Move-AgentWorkItem `$workItem 'verify'"
+Need 'review failure returns to implementation' "Move-AgentWorkItem `$workItem 'rework'"
 Need 'pipeline state persistence' 'teamPipeline'
 Need 'continue accepts answer' "'^/continue(?:\s+(.*))?$'"
 Need 'answer is attached to original task' 'User clarification:'

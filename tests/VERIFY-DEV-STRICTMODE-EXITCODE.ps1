@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$dev=Get-Content -LiteralPath (Join-Path $root 'DEV.ps1') -Raw
+$dev=Get-Content -LiteralPath (Join-Path $root 'powershell\DEV.ps1') -Raw
 
 if($dev -notmatch 'function Invoke-DevScript'){throw '[FAIL] DEV child-script runner missing'}
 if($dev -notmatch '\$script:DevLastExitCode=0'){throw '[FAIL] DEV exit-code state is not initialized under StrictMode'}

@@ -13,7 +13,7 @@ try{
 }finally{$ErrorActionPreference=$oldEap}
 if($gitCode -ne 0 -or [string]::IsNullOrWhiteSpace(($top|Out-String).Trim())){throw 'RealProject must be a Git repository'}
 $runtimeHome=Join-Path $HOME '.continue\local-coding-agent'
-$runtime=Join-Path $runtimeHome 'LocalCodingAgent.psm1'
+$runtime=Join-Path $runtimeHome 'LocalCodingAgent.psd1'
 $runtimeVersion=Join-Path $runtimeHome 'VERSION'
 $expectedVersion=(Get-Content (Join-Path $root 'VERSION') -Raw).Trim()
 if(-not(Test-Path $runtime)){throw 'Installed Local Coding Agent runtime not found. Install/activate the candidate build first.'}

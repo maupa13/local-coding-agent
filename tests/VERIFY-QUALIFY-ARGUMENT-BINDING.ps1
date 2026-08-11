@@ -3,7 +3,7 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$q=Get-Content -LiteralPath (Join-Path $root 'QUALIFY-RELEASE.ps1') -Raw
+$q=Get-Content -LiteralPath (Join-Path $root 'powershell\QUALIFY-RELEASE.ps1') -Raw
 
 if($q -match 'Export-Clixml' -or $q -match 'Import-Clixml'){
   throw '[FAIL] qualification Run-Step still uses CLIXML argument trampoline'

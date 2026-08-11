@@ -6,3 +6,5 @@ test-results/
 *.tmp
 .idea/
 tests/sandbox/__pycache__/
+artifacts/
+.tools/

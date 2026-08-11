@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "terminalStatuses": ["Released", "Rejected"],
+  "statuses": ["Backlog", "Discovery", "Ready", "Implementation", "Verification", "Review", "ReleaseReady", "Released", "Blocked", "Rejected"],
+  "schemes": {
+    "feature": ["Backlog", "Discovery", "Ready", "Implementation", "Verification", "Review", "ReleaseReady", "Released"],
+    "bugfix": ["Backlog", "Discovery", "Ready", "Implementation", "Verification", "Review", "ReleaseReady", "Released"],
+    "refactor": ["Backlog", "Discovery", "Ready", "Implementation", "Verification", "Review", "ReleaseReady", "Released"],
+    "docs": ["Backlog", "Discovery", "Implementation", "Verification", "Review", "Released"]
+  },
+  "transitions": [
+    {"name":"triage","from":"Backlog","to":"Discovery","requires":[]},
+    {"name":"accept","from":"Discovery","to":"Ready","requires":["requirements"]},
+    {"name":"start","from":"Ready","to":"Implementation","requires":[]},
+    {"name":"implement-docs","from":"Discovery","to":"Implementation","requires":["requirements"]},
+    {"name":"submit","from":"Implementation","to":"Verification","requires":["changes","tests"]},
+    {"name":"fix-verification","from":"Verification","to":"Implementation","requires":["verificationFailed"]},
+    {"name":"verify","from":"Verification","to":"Review","requires":["deterministicChecks"]},
+    {"name":"rework","from":"Review","to":"Implementation","requires":["reviewFailed"]},
+    {"name":"approve","from":"Review","to":"ReleaseReady","requires":["review","evidence"]},
+    {"name":"release-docs","from":"Review","to":"Released","requires":["review","evidence"]},
+    {"name":"ship","from":"ReleaseReady","to":"Released","requires":["build","hiddenEval","evidence"]},
+    {"name":"block","from":"*","to":"Blocked","requires":["blocker"]},
+    {"name":"resume-discovery","from":"Blocked","to":"Discovery","requires":["blockerResolved"]},
+    {"name":"resume-implementation","from":"Blocked","to":"Implementation","requires":["blockerResolved"]},
+    {"name":"reject","from":"Backlog","to":"Rejected","requires":["resolution"]},
+    {"name":"reject-after-discovery","from":"Discovery","to":"Rejected","requires":["resolution"]}
+  ]
+}

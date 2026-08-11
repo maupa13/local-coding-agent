@@ -32,10 +32,11 @@
       "layer": "live-e2e",
       "automatedBy": "tests/RUN-LIVE-E2E.ps1",
       "asserts": [
-        "agent edits source",
-        "agent adds regression test",
+        "agent implements validation, TTL, selective clear, bulk expiry, unique ids and revoke across two source files",
+        "agent adds at least seven behavioral tests across two test files",
         "npm test passes",
-        "quality gate passes"
+        "quality gate passes",
+        "public CommonJS exports and package manifest remain compatible"
       ]
     },
     {

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "releasePolicy": {
+    "allScenariosMustPass": true,
+    "requireModelProducedDiff": true,
+    "hiddenChecksMustPass": true,
+    "modelSelfReportIsNotEvidence": true
+  },
+  "scenarios": [
+    {
+      "id": "EVAL-NODE-BUGFIX",
+      "language": "JavaScript",
+      "workflow": "bugfix",
+      "fixture": "node-bugfix",
+      "mustChange": ["src/session-store.js", "tests/session-store.test.js"],
+      "hiddenCheck": "hidden/node-bugfix.hidden.test.js",
+      "skills": ["root-cause", "regression", "edge-cases", "verification"]
+    },
+    {
+      "id": "EVAL-PY-FEATURE",
+      "language": "Python",
+      "workflow": "feature",
+      "fixture": "python-feature",
+      "mustChange": ["src/rate_limiter.py", "tests/test_rate_limiter.py"],
+      "hiddenCheck": "hidden/test_python_feature_hidden.py",
+      "skills": ["spec-implementation", "validation", "time-boundary", "tests"]
+    },
+    {
+      "id": "EVAL-JAVA-REFACTOR",
+      "language": "Java",
+      "workflow": "refactor",
+      "fixture": "java-refactor",
+      "mustChange": ["src/main/java/eval/PriceCalculator.java"],
+      "hiddenCheck": "hidden/PriceCalculatorContractTest.java",
+      "skills": ["refactoring", "behavior-preservation", "public-api", "build"]
+    },
+    {
+      "id": "EVAL-PS-DOCS",
+      "language": "PowerShell",
+      "workflow": "docs",
+      "fixture": "powershell-analysis",
+      "mustChange": ["AUDIT.md"],
+      "hiddenCheck": "hidden/Verify-Audit.ps1",
+      "skills": ["repository-analysis", "contradiction-detection", "evidence", "documentation"]
+    }
+  ]
+}
+

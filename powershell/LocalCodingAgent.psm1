@@ -34,6 +34,10 @@ $script:AgentRuntimeVersionPath = Join-Path $script:AgentHome 'VERSION'
 $script:AgentModulePath = $PSCommandPath
 $script:NativeLoopPath = Join-Path (Split-Path -Parent $PSCommandPath) 'OllamaAgentLoop.ps1'
 if(Test-Path -LiteralPath $script:NativeLoopPath){. $script:NativeLoopPath}
+$script:WorkflowStatePath = Join-Path (Split-Path -Parent $PSCommandPath) 'WorkflowState.ps1'
+if(Test-Path -LiteralPath $script:WorkflowStatePath){. $script:WorkflowStatePath}
+$script:ArtifactAnalysisPath = Join-Path (Split-Path -Parent $PSCommandPath) 'ArtifactAnalysis.ps1'
+if(Test-Path -LiteralPath $script:ArtifactAnalysisPath){. $script:ArtifactAnalysisPath}
 $script:DependencySensitiveNames = @(
     'Cargo.toml','Cargo.lock','package.json','package-lock.json','pnpm-lock.yaml','yarn.lock',
     'pom.xml','build.gradle','build.gradle.kts','libs.versions.toml',
@@ -2846,7 +2850,10 @@ function Invoke-AgentTeamPipeline {
     $root=Resolve-AgentProjectRoot -StartPath $ProjectRoot
     $intent=Resolve-AgentIntent $Task
     $implementationWorkflow=if($intent -match 'bugfix|hotfix'){'bugfix'}else{'feature'}
-    $pipeline=[ordered]@{id=(Get-Date -Format 'yyyyMMdd-HHmmss-fff');task=$Task;project=$root;status='RUNNING';currentPhase='planner';startedAt=(Get-Date).ToString('o');phases=@()}
+    $workType=if($intent -match 'bugfix|hotfix'){'bugfix'}elseif($intent -match 'refactor'){'refactor'}elseif($intent -match 'docs'){'docs'}else{'feature'}
+    $workItem=New-AgentWorkItem -Type $workType -Summary $Task
+    Move-AgentWorkItem $workItem 'triage'|Out-Null
+    $pipeline=[ordered]@{id=(Get-Date -Format 'yyyyMMdd-HHmmss-fff');task=$Task;project=$root;status='RUNNING';currentPhase='planner';workItem=$workItem;startedAt=(Get-Date).ToString('o');phases=@()}
     Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     Write-Host ''
     Write-Host 'TEAM PIPELINE · Planner → Implementer → Tester → Reviewer' -ForegroundColor Cyan
@@ -2855,24 +2862,35 @@ function Invoke-AgentTeamPipeline {
     $pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     Invoke-AgentWorkflow -Workflow 'analyze' -DisplayWorkflow 'analysis' -Task @("TEAM ROLE: PLANNER. Investigate the task read-only. Produce an implementation plan grounded in code, constraints, acceptance criteria, risks, and exact verification commands. Do not modify files. Task: $Task") -Fast -ReadOnly -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
     $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
-    if($phaseStatus -eq 'BLOCKED'){$pipeline.status='BLOCKED';$pipeline.currentPhase='planner';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+    if($phaseStatus -eq 'BLOCKED'){Move-AgentWorkItem $workItem 'block' @{blocker=$true}|Out-Null;$pipeline.status='BLOCKED';$pipeline.currentPhase='planner';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
     $plan=Get-AgentPhaseSummary $result.EvidenceDirectory
+
+    if($workType -eq 'docs'){Move-AgentWorkItem $workItem 'implement-docs' @{requirements=$true}|Out-Null}
+    else{Move-AgentWorkItem $workItem 'accept' @{requirements=$true}|Out-Null;Move-AgentWorkItem $workItem 'start'|Out-Null}
 
     $pipeline.currentPhase='implementer';$phase=[ordered]@{role='implementer';workflow=$implementationWorkflow;status='RUNNING';startedAt=(Get-Date).ToString('o')};$pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     $implementationTask="TEAM ROLE: IMPLEMENTER. Implement the original task from the CURRENT repository state. Use the planner report as evidence, but verify it against the repository. Original task: $Task`n`nPLANNER REPORT:`n$plan"
     Invoke-AgentWorkflow -Workflow $implementationWorkflow -DisplayWorkflow $implementationWorkflow -Task @($implementationTask) -Fast:$Fast -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
     $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
-    if($phaseStatus -in @('BLOCKED','FAIL')){$pipeline.status=$phaseStatus;$pipeline.currentPhase='implementer';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+    if($phaseStatus -eq 'BLOCKED'){Move-AgentWorkItem $workItem 'block' @{blocker=$true}|Out-Null;$pipeline.status='BLOCKED';$pipeline.currentPhase='implementer';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+    if($phaseStatus -eq 'FAIL'){$pipeline.status='FAIL';$pipeline.currentPhase='implementer';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
 
     $pipeline.currentPhase='tester';$testerStatus=if($script:LastQualityStatus -in @('PASS','PASS WITH WARNINGS')){'PASS'}else{'FAIL'}
     $tester=[pscustomobject][ordered]@{role='tester';workflow='deterministic-quality';status=$testerStatus;qualityStatus=$script:LastQualityStatus;evidenceDirectory=$result.EvidenceDirectory;startedAt=(Get-Date).ToString('o')}
     $pipeline.phases=@($pipeline.phases)+@($tester);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     if($testerStatus -eq 'FAIL'){$pipeline.status='FAIL';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+    # Only wrapper-owned deterministic quality may supply these gates. Model
+    # prose is deliberately not consulted for this transition.
+    Move-AgentWorkItem $workItem 'submit' @{changes=$true;tests=$true}|Out-Null
+    Move-AgentWorkItem $workItem 'verify' @{deterministicChecks=$true}|Out-Null
 
     $pipeline.currentPhase='reviewer';$phase=[ordered]@{role='reviewer';workflow='review';status='RUNNING';startedAt=(Get-Date).ToString('o')};$pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     Invoke-AgentWorkflow -Workflow 'review' -DisplayWorkflow 'review' -Task @("TEAM ROLE: REVIEWER. Independently review the CURRENT diff against the original task and acceptance criteria. Inspect deterministic verification evidence. Read only; do not modify files. Original task: $Task") -Fast -ReadOnly -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
     $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
-    $pipeline.currentPhase='complete';$pipeline.status=if($phaseStatus -in @('BLOCKED','FAIL')){$phaseStatus}else{'PASS'};$pipeline.finishedAt=(Get-Date).ToString('o');Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    if($phaseStatus -eq 'BLOCKED'){Move-AgentWorkItem $workItem 'block' @{blocker=$true}|Out-Null;$pipeline.status='BLOCKED'}
+    elseif($phaseStatus -eq 'FAIL'){Move-AgentWorkItem $workItem 'rework' @{reviewFailed=$true}|Out-Null;$pipeline.status='FAIL'}
+    else{Move-AgentWorkItem $workItem $(if($workType -eq 'docs'){'release-docs'}else{'approve'}) @{review=$true;evidence=$true}|Out-Null;$pipeline.status='PASS'}
+    $pipeline.currentPhase='complete';$pipeline.finishedAt=(Get-Date).ToString('o');Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
     Write-Host "TEAM RESULT: $($pipeline.status)" -ForegroundColor $(if($pipeline.status -eq 'PASS'){'Green'}else{'Yellow'})
     return [pscustomobject]$pipeline
 }
@@ -4070,7 +4088,7 @@ function agent-doctor {
         $pt=Get-Content $pp -Raw; if($pt -notmatch '(?m)^- Bash\(\*\)\r?$'){throw 'Bash automatic allow missing'}
         if(-not(Get-Command Get-AgentManagedPolicyArgs -ErrorAction SilentlyContinue)){throw 'session permission modes missing'}
     }
-    Check 'Quality Engine runtime' { if(-not(Get-Command Invoke-AgentWorkflow -ErrorAction SilentlyContinue)){throw 'runtime missing'}; if(-not(Test-Path (Join-Path $script:AgentHome 'LocalCodingAgent.psm1'))){throw 'module missing'} }
+    Check 'Quality Engine runtime' { if(-not(Get-Command Invoke-AgentWorkflow -ErrorAction SilentlyContinue)){throw 'runtime missing'}; if(-not(Test-Path (Join-Path $script:AgentHome 'LocalCodingAgent.psd1'))){throw 'module manifest missing'} }
     Check 'Global/project settings runtime' { New-Item -ItemType Directory -Force -Path $script:ProjectSettingsHome | Out-Null; Get-AgentGlobalSettings | Out-Null }
     Check 'Installed runtime identity' {
         if(-not(Test-Path -LiteralPath $script:AgentRuntimeVersionPath)){throw "runtime VERSION missing: $script:AgentRuntimeVersionPath"}
@@ -4188,7 +4206,7 @@ This quick lane is read-only and does not overwrite the main workflow state.
 }
 
 Export-ModuleMember -Function @(
-    'Invoke-ContinueAgent','Invoke-AgentWorkflow','Test-LocalCodingAgentComplianceExtractor','Test-LocalCodingAgentComplianceResult',
+    'Invoke-ContinueAgent','Invoke-AgentWorkflow','Invoke-AgentArtifactAnalysis','Test-LocalCodingAgentComplianceExtractor','Test-LocalCodingAgentComplianceResult',
     'Start-LocalCodingAgent','Install-AgentIdeaIntegration','Install-AgentIdeaIntegrations','Find-AgentIdeaProjects','Show-AgentIdeaIntegration','Remove-AgentIdeaIntegration','agent-idea','agent-idea-all','agent','agent-fast','agent-tui','agent-ask','agent-team','agent-plan','agent-auto','agent-resume',
     'agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result',
     'agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix',

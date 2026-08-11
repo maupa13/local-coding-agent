@@ -4,8 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $m=Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
-$a=Get-Content (Join-Path $root 'ACTIVATE.ps1') -Raw
-$i=Get-Content (Join-Path $root 'INSTALL.ps1') -Raw
+$a=Get-Content (Join-Path $root 'powershell\ACTIVATE.ps1') -Raw
+$i=Get-Content (Join-Path $root 'powershell\INSTALL.ps1') -Raw
 function Need([string]$Name,[string]$Text,[string]$Hay=$m){if(-not $Hay.Contains($Text)){throw $Name}}
 Need 'Ollama API base' 'function Get-AgentOllamaApiBase'
 Need 'Ollama pull installer' 'function Install-AgentOllamaModel'

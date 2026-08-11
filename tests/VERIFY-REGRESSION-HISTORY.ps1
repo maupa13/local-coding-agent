@@ -4,8 +4,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $module=Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
-$install=Get-Content (Join-Path $root 'INSTALL.ps1') -Raw
-$idea=Get-Content (Join-Path $root 'IDEA-INTEGRATE.ps1') -Raw
+$install=Get-Content (Join-Path $root 'powershell\INSTALL.ps1') -Raw
+$idea=Get-Content (Join-Path $root 'powershell\IDEA-INTEGRATE.ps1') -Raw
 $quality=Get-Content (Join-Path $root 'tests\VERIFY-QUALITY-ENGINE.ps1') -Raw
 $harness=Get-Content (Join-Path $root 'tests\RUN-ALL.ps1') -Raw
 function Need([string]$Id,[string]$Name,[bool]$Condition){if(-not $Condition){throw "$Id $Name"};Write-Host "[PASS] $Id $Name" -ForegroundColor Green}
@@ -26,7 +26,7 @@ Need 'REG-014' 'native stderr warnings cannot abort managed workflow' (($module 
 Need 'REG-015' 'release qualification requires live E2E' (($harness -match 'LiveE2E') -and (Test-Path (Join-Path $root 'tests\VERIFY-RELEASE-GATE.ps1')) -and (Test-Path (Join-Path $root 'tests\RUN-LIVE-E2E.ps1')))
 Need 'REG-017' 'fixture generators are isolated and repeatable' (Test-Path (Join-Path $root 'tests\VERIFY-FIXTURE-GENERATORS.ps1'))
 Need 'REG-018' 'test output stays outside package/project roots' (($harness -match 'GetTempPath') -and (Test-Path (Join-Path $root 'tests\VERIFY-OUTPUT-ISOLATION.ps1')))
-Need 'REG-019' 'package gate does not execute runtime probes' ((Get-Content (Join-Path $root 'VERIFY-PACKAGE.ps1') -Raw) -notmatch "Check 'Native stderr warning isolation'")
+Need 'REG-019' 'package gate does not execute runtime probes' ((Get-Content (Join-Path $root 'powershell\VERIFY-PACKAGE.ps1') -Raw) -notmatch "Check 'Native stderr warning isolation'")
 
 Need 'REG-020' 'empty managed output recovery regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-020')
 Need 'REG-020A' 'empty compliance recovery parameter retained' ($module -match 'AllowEmptyString')

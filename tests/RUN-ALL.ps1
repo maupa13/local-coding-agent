@@ -46,10 +46,13 @@ function Invoke-Test([string]$Tier,[string]$Name,[string]$Script,[string[]]$Argu
  }
 }
 Write-Host "Local Coding Agent test harness · $Profile" -ForegroundColor Cyan
-Invoke-Test 'package' 'VERIFY-PACKAGE' 'VERIFY-PACKAGE.ps1'
+Invoke-Test 'package' 'VERIFY-PACKAGE' 'powershell\VERIFY-PACKAGE.ps1'
 Invoke-Test 'regression' 'HISTORICAL-BUGS' 'tests\VERIFY-REGRESSION-HISTORY.ps1'
 Invoke-Test 'regression' 'TEST-MATRIX' 'tests\VERIFY-TEST-MATRIX.ps1'
 Invoke-Test 'regression' 'PS51-COMPAT' 'tests\VERIFY-PS51-COMPAT.ps1'
+Invoke-Test 'regression' 'MODULE-BOUNDARY' 'tests\VERIFY-MODULE-BOUNDARY.ps1'
+Invoke-Test 'regression' 'WORK-ITEM-WORKFLOW' 'tests\VERIFY-WORK-ITEM-WORKFLOW.ps1'
+Invoke-Test 'regression' 'ARTIFACT-ANALYSIS' 'tests\VERIFY-ARTIFACT-ANALYSIS.ps1'
 Invoke-Test 'regression' 'NATIVE-STDERR' 'tests\VERIFY-NATIVE-STDERR.ps1'
 Invoke-Test 'regression' 'NATIVE-OLLAMA-LOOP' 'tests\VERIFY-NATIVE-OLLAMA-LOOP.ps1'
 Invoke-Test 'regression' 'RELEASE-GATE' 'tests\VERIFY-RELEASE-GATE.ps1'

@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $m=Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
-$i=Get-Content (Join-Path $root 'INSTALL.ps1') -Raw
+$i=Get-Content (Join-Path $root 'powershell\INSTALL.ps1') -Raw
 $u=Get-Content (Join-Path $root 'UNINSTALL.ps1') -Raw
 function Need([string]$Name,[string]$Text,[string]$Hay=$m){if(-not $Hay.Contains($Text)){throw $Name}}
 Need 'global settings path' "'settings.json'"
