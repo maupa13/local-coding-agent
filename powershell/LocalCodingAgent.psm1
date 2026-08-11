@@ -1115,18 +1115,23 @@ function Get-AgentComplianceRequirements {
     )
 
     $stage='init'
-    $diag=New-Object 'System.Collections.Generic.List[string]'
+    $diag=@()
+
     function Add-ReqDiag([string]$Message){
-        [void]$diag.Add("[$stage] $Message")
+        $scriptLine="[$stage] $Message"
+        $script:__lcaReqDiag=@($script:__lcaReqDiag)+$scriptLine
         if(-not [string]::IsNullOrWhiteSpace($DiagnosticPath)){
             try{
                 $parent=Split-Path -Parent $DiagnosticPath
-                if($parent -and -not(Test-Path -LiteralPath $parent)){New-Item -ItemType Directory -Force -Path $parent|Out-Null}
-                "[$stage] $Message"|Add-Content -Encoding UTF8 -LiteralPath $DiagnosticPath
+                if($parent -and -not(Test-Path -LiteralPath $parent)){
+                    New-Item -ItemType Directory -Force -Path $parent|Out-Null
+                }
+                $scriptLine|Add-Content -Encoding UTF8 -LiteralPath $DiagnosticPath
             }catch{}
         }
     }
 
+    $script:__lcaReqDiag=@()
     try{
         if(-not [string]::IsNullOrWhiteSpace($DiagnosticPath) -and (Test-Path -LiteralPath $DiagnosticPath)){
             Remove-Item -LiteralPath $DiagnosticPath -Force -ErrorAction SilentlyContinue
@@ -1136,7 +1141,7 @@ function Get-AgentComplianceRequirements {
         Add-ReqDiag "RepositoryRoot exists: $(Test-Path -LiteralPath $RepositoryRoot -PathType Container)"
 
         $stage='docs-root'
-        $docCandidates=New-Object 'System.Collections.Generic.List[string]'
+        $docCandidates=@()
         $docsRoot=Join-Path $RepositoryRoot 'docs'
         Add-ReqDiag "DocsRoot: $docsRoot"
         Add-ReqDiag "DocsRoot exists: $(Test-Path -LiteralPath $docsRoot -PathType Container)"
@@ -1153,19 +1158,22 @@ function Get-AgentComplianceRequirements {
                 if($rel.StartsWith($RepositoryRoot,[System.StringComparison]::OrdinalIgnoreCase)){
                     $rel=$rel.Substring($RepositoryRoot.Length)
                 }
-                while($rel.StartsWith('\') -or $rel.StartsWith('/')){$rel=$rel.Substring(1)}
-                [void]$docCandidates.Add($rel)
+                while($rel.StartsWith('\') -or $rel.StartsWith('/')){
+                    $rel=$rel.Substring(1)
+                }
+                $docCandidates += $rel
             }
         }
 
         $stage='inventory'
         try{
             $inventory=Get-AgentRepositoryInventory -RepositoryRoot $RepositoryRoot
-            Add-ReqDiag "Inventory docs discovered: $(@($inventory.Docs).Count)"
-            foreach($rel in @($inventory.Docs)){
-                if($rel){
+            $inventoryDocs=@($inventory.Docs)
+            Add-ReqDiag "Inventory docs discovered: $($inventoryDocs.Count)"
+            foreach($rel in $inventoryDocs){
+                if($null -ne $rel -and -not [string]::IsNullOrWhiteSpace([string]$rel)){
                     Add-ReqDiag "inventory: $rel"
-                    [void]$docCandidates.Add([string]$rel)
+                    $docCandidates += [string]$rel
                 }
             }
         }catch{
@@ -1173,9 +1181,9 @@ function Get-AgentComplianceRequirements {
         }
 
         $stage='candidate-merge'
-        $docCandidates=@($docCandidates|Sort-Object -Unique)
+        $docCandidates=@($docCandidates|Where-Object{$_}|Sort-Object -Unique)
         Add-ReqDiag "Merged doc candidates: $($docCandidates.Count)"
-        $rows=New-Object 'System.Collections.Generic.List[object]'
+        $rows=@()
 
         foreach($rel in $docCandidates){
             $stage="read:$rel"
@@ -1195,12 +1203,16 @@ function Get-AgentComplianceRequirements {
             $matches=0
             foreach($line in $lines){
                 $value=[string]$line
-                $m=[regex]::Match($value,'^\s*(?:[-*+]\s*)?(?:#{1,6}\s*)?(?:\*\*|__)?([A-Za-z]{2,16}[-_ ]?\d+)(?:\*\*|__)?\s*(?::|[-–—])\s*(.+?)\s*$')
-                if(-not $m.Success){continue}
-                $id=($m.Groups[1].Value -replace '[_ ]','-').ToUpperInvariant()
-                $body=$m.Groups[2].Value.Trim()
+                $match=[regex]::Match($value,'^\s*(?:[-*+]\s*)?(?:#{1,6}\s*)?(?:\*\*|__)?([A-Za-z]{2,16}[-_ ]?\d+)(?:\*\*|__)?\s*(?::|[-–—])\s*(.+?)\s*$')
+                if(-not $match.Success){continue}
+                $id=($match.Groups[1].Value -replace '[_ ]','-').ToUpperInvariant()
+                $body=$match.Groups[2].Value.Trim()
                 if([string]::IsNullOrWhiteSpace($body)){continue}
-                [void]$rows.Add([pscustomobject]@{Id=$id;Text=$body;Document=[string]$rel})
+                $rows += [pscustomobject]@{
+                    Id=$id
+                    Text=$body
+                    Document=[string]$rel
+                }
                 $matches++
                 Add-ReqDiag "REQ match: $id"
             }
@@ -1208,26 +1220,31 @@ function Get-AgentComplianceRequirements {
         }
 
         $stage='dedupe'
-        $unique=New-Object 'System.Collections.Generic.List[object]'
+        $unique=@()
         $seen=@{}
         foreach($row in @($rows|Sort-Object Id,Document)){
-            if($seen.ContainsKey([string]$row.Id)){continue}
-            $seen[[string]$row.Id]=$true
-            [void]$unique.Add($row)
+            $key=[string]$row.Id
+            if($seen.ContainsKey($key)){continue}
+            $seen[$key]=$true
+            $unique += $row
         }
+
         Add-ReqDiag "Unique requirements: $($unique.Count)"
-        foreach($row in @($unique)){Add-ReqDiag "requirement: $($row.Id) from $($row.Document)"}
+        foreach($row in $unique){
+            Add-ReqDiag "requirement: $($row.Id) from $($row.Document)"
+        }
+
         $stage='done'
         Add-ReqDiag 'completed'
-        $result=New-Object 'System.Object[]' $unique.Count
-        if($unique.Count -gt 0){$unique.CopyTo($result,0)}
-        return $result
+        return $unique
     }catch{
         $type=$_.Exception.GetType().FullName
         $message=$_.Exception.Message
         Add-ReqDiag "FATAL: ${type}: $message"
         Add-ReqDiag "Position: $($_.InvocationInfo.PositionMessage)"
         throw
+    }finally{
+        Remove-Variable -Name __lcaReqDiag -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
@@ -1237,7 +1254,7 @@ function Test-LocalCodingAgentComplianceExtractor {
         [Parameter(Mandatory)][string]$ProjectRoot,
         [string]$DiagnosticPath
     )
-    return @(Get-AgentComplianceRequirements -RepositoryRoot $ProjectRoot -DiagnosticPath $DiagnosticPath)
+    Get-AgentComplianceRequirements -RepositoryRoot $ProjectRoot -DiagnosticPath $DiagnosticPath
 }
 
 function Test-LocalCodingAgentComplianceResult {

@@ -2,7 +2,7 @@
 
 **VERDICT: PASS**
 
-PASS: 16 · FAIL: 0
+PASS: 17 · FAIL: 0
 
 | Check | Status | Detail |
 |---|---|---|
@@ -19,6 +19,7 @@ PASS: 16 · FAIL: 0
 | log isolation/package contamination | PASS | runtime logs cannot self-contaminate package profile scan |
 | rc.14 matrix-before-final accepted | PASS | rc.14 matrix-before-final accepted; Run-Step binding no longer uses CLIXML |
 | variable-colon/stable dev workspace | PASS | no unsafe $variable: interpolation; stable dev folder + Git workflow present |
+| extractor generic-list free | PASS | compliance extractor/helper use plain PowerShell arrays only |
 | StrictMode verifier hygiene | PASS | no unsafe double-quoted literal $variable verifier patterns |
 | wrapper state machine | PASS | 7 state transitions |
 | UTF-8 text hygiene | PASS | no known mojibake literal |

@@ -21,6 +21,9 @@ foreach($needle in @(
 )){
   if($extractor -notmatch [regex]::Escape($needle)){throw "[FAIL] extractor diagnostic stage missing: $needle"}
 }
+if($extractor -match 'Generic\.List'){
+  throw '[FAIL] extractor still uses Generic.List, which is unstable at PS5.1 array boundaries'
+}
 if($extractor -match 'TrimStart\(\[char\[\]\]'){
   throw '[FAIL] extractor still uses PS5.1-sensitive TrimStart(char[]) binder path'
 }

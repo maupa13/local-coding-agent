@@ -1,7 +1,7 @@
 {
   "version": "1.0.0-dev",
   "verdict": "PASS",
-  "passed": 16,
+  "passed": 17,
   "failed": 0,
   "results": [
     {
@@ -68,6 +68,11 @@
       "name": "variable-colon/stable dev workspace",
       "status": "PASS",
       "detail": "no unsafe $variable: interpolation; stable dev folder + Git workflow present"
+    },
+    {
+      "name": "extractor generic-list free",
+      "status": "PASS",
+      "detail": "compliance extractor/helper use plain PowerShell arrays only"
     },
     {
       "name": "StrictMode verifier hygiene",

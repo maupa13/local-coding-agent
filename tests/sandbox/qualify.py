@@ -405,6 +405,22 @@ def test_variable_colon_and_folder_identity():
     require("checkpoint" in dev and "restore" in dev and "qualify" in dev,"DEV workflow incomplete")
     return "no unsafe $variable: interpolation; stable dev folder + Git workflow present"
 
+
+def test_extractor_generic_list_free():
+    module=read("powershell/LocalCodingAgent.psm1")
+    start=module.find("function Get-AgentComplianceRequirements")
+    end=module.find("function Test-LocalCodingAgentComplianceExtractor",start)
+    require(start>=0 and end>start,"extractor boundaries missing")
+    extractor=module[start:end]
+    require("Generic.List" not in extractor,"compliance extractor still uses Generic.List")
+    require("New-Object 'System.Object[]'" not in extractor,"manual Object[] construction still present")
+    require("return $unique" in extractor,"plain PowerShell array return missing")
+    helper_start=module.find("function Test-LocalCodingAgentComplianceExtractor")
+    helper_end=module.find("\nfunction ",helper_start+10)
+    helper=module[helper_start:helper_end]
+    require("return @(" not in helper,"helper still wraps extractor in array-subexpression")
+    return "compliance extractor/helper use plain PowerShell arrays only"
+
 def wrapper_state(exit_code, compliance=False, req_count=0, changed=0, checks=None, review=None, violations=0):
     checks=checks or []
     if exit_code!=0: return "FAIL"
@@ -451,6 +467,7 @@ for name,fn in [
     ("log isolation/package contamination",test_log_isolation_package_contamination),
     ("rc.14 matrix-before-final accepted",test_rc14_matrix_before_final_and_runstep_contract),
     ("variable-colon/stable dev workspace",test_variable_colon_and_folder_identity),
+    ("extractor generic-list free",test_extractor_generic_list_free),
     ("StrictMode verifier hygiene",test_strictmode_verifier_hygiene),
     ("wrapper state machine",test_state_machine),
     ("UTF-8 text hygiene",test_no_mojibake_literals),
