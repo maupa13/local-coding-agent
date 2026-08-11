@@ -51,6 +51,13 @@ switch($Action){
     exit $LASTEXITCODE
   }
   'install' {
+    & (Join-Path $root 'VERIFY-PACKAGE.ps1')
+    if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+    & (Join-Path $root 'tests\RUN-ALL.ps1') -Profile Full
+    if($LASTEXITCODE -ne 0){
+      Write-Host '[BLOCKED] Install skipped because Full regression is NO-GO.' -ForegroundColor Red
+      exit $LASTEXITCODE
+    }
     & (Join-Path $root 'INSTALL.ps1')
     exit $LASTEXITCODE
   }

@@ -22,7 +22,7 @@
     {
       "name": "core finalizer contracts",
       "status": "PASS",
-      "detail": "171 functions, 0 duplicates"
+      "detail": "172 functions, 0 duplicates"
     },
     {
       "name": "release fixture semantics",

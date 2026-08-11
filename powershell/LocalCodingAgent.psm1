@@ -1229,6 +1229,15 @@ function Get-AgentComplianceRequirements {
     }
 }
 
+function Test-LocalCodingAgentComplianceExtractor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [string]$DiagnosticPath
+    )
+    return @(Get-AgentComplianceRequirements -RepositoryRoot $ProjectRoot -DiagnosticPath $DiagnosticPath)
+}
+
 function Get-AgentComplianceEvidence {
     param(
         [Parameter(Mandatory)][string]$RepositoryRoot,
@@ -3331,7 +3340,7 @@ This quick lane is read-only and does not overwrite the main workflow state.
 }
 
 Export-ModuleMember -Function @(
-    'Invoke-ContinueAgent','Invoke-AgentWorkflow',
+    'Invoke-ContinueAgent','Invoke-AgentWorkflow','Test-LocalCodingAgentComplianceExtractor',
     'Start-LocalCodingAgent','Install-AgentIdeaIntegration','Install-AgentIdeaIntegrations','Find-AgentIdeaProjects','Show-AgentIdeaIntegration','Remove-AgentIdeaIntegration','agent-idea','agent-idea-all','agent','agent-fast','agent-tui','agent-ask','agent-plan','agent-auto','agent-resume',
     'agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result',
     'agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix',

@@ -331,7 +331,7 @@ def test_diagnostic_logging_and_runtime_selftest_contract():
         ("Fixture preserved automatically after failure" in live, "failed fixture preservation missing"),
         ("RepositoryRoot exists:" in module and "DocsRoot exists:" in module, "extractor root diagnostics missing"),
         ("requirement matches:" in module and "Unique requirements:" in module, "extractor match diagnostics missing"),
-        ("Get-AgentComplianceRequirements" in runtime_test, "runtime self-test does not invoke real extractor"),
+        ("Test-LocalCodingAgentComplianceExtractor" in runtime_test, "runtime self-test does not invoke real extractor helper"),
         ("REQ-01" in runtime_test and "REQ-04" in runtime_test, "runtime self-test expected IDs missing"),
     ]
     for cond,msg in checks:

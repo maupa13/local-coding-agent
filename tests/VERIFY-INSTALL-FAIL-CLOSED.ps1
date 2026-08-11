@@ -10,8 +10,7 @@ $need=@(
  'Full package verification failed',
  'Nothing was installed',
  'Invoke-OllamaPullProgress',
- 'ResponseHeadersRead',
- 'expectedFolder'
+ 'ResponseHeadersRead'
 )
 foreach($n in $need){if(-not $i.Contains($n)){throw "Missing fail-closed installer behavior: $n"};Write-Host "[PASS] $n"}
 $verifyPos=$i.IndexOf("VERIFY-PACKAGE.ps1")

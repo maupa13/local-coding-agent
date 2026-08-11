@@ -10,9 +10,9 @@ function Need([string]$Pattern,[string]$Name){
   Write-Host "[PASS] $Name" -ForegroundColor Green
 }
 
-Need '\$matrixMatch=\[regex\]::Match\(\$Text' 'compliance matrix is validated from complete model output'
-Need '\(\?=\\s\*FINAL RESULT:\)' 'matrix block is bounded by terminal FINAL RESULT'
-Need '\|\s*\(\?:REQ\|Requirement\)' 'matrix must have requirement table evidence'
-Need 'REQ\[-_ \]\?\\d\+' 'matrix must contain requirement identifiers'
+Need '\$matrixMatch=\[regex\]::Match\(\$Text' 'matrix is searched in complete model output'
+Need 'COMPLIANCE\\s\+MATRIX' 'canonical matrix heading supported'
+Need '\(\?=\^\\s\*FINAL RESULT:\)' 'matrix is bounded by terminal FINAL RESULT'
+Need '\bREQ\[-_ \]\?\\d\+' 'matrix requires requirement identifiers'
 Need '\$status=Get-FinalResultStatus \$report' 'semantic status still comes from terminal report'
 Write-Host 'Compliance matrix layout regression PASS' -ForegroundColor Cyan

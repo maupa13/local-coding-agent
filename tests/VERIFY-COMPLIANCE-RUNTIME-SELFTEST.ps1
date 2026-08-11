@@ -16,10 +16,7 @@ try{
   $m=Import-Module $modulePath -Force -DisableNameChecking -PassThru
   if(-not $m){throw '[FAIL] LocalCodingAgent module import failed'}
 
-  $requirements=@(& $m {
-    param($Project,$Diagnostic)
-    @(Get-AgentComplianceRequirements -RepositoryRoot $Project -DiagnosticPath $Diagnostic)
-  } $tempRoot $diag)
+  $requirements=@(Test-LocalCodingAgentComplianceExtractor -ProjectRoot $tempRoot -DiagnosticPath $diag)
 
   $ids=@($requirements|ForEach-Object{[string]$_.Id}|Sort-Object -Unique)
   Write-Host "[INFO] runtime requirement IDs: $($ids -join ', ')" -ForegroundColor DarkGray
