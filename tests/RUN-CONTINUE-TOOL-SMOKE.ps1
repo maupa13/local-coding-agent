@@ -26,8 +26,9 @@ $prompt='Edit main.md. Keep "# Draft". Replace "One sentence." with exactly "Too
 
 # Official Continue CLI headless contract:
 # --allow Edit/Write/MultiEdit makes write tools available without TUI approval.
-$args=@(
+$cnArgs=@(
   '--config',$ConfigPath,
+  '--verbose',
   '--allow','Edit',
   '--allow','MultiEdit',
   '--allow','Write',
@@ -37,7 +38,7 @@ $args=@(
 
 Write-Host "Continue CLI : $($cn.Source)" -ForegroundColor DarkGray
 try{
-  $ver=& cn --version 2>&1
+  $ver=& $cn.Source --version 2>&1
   Write-Host "Continue ver : $($ver -join ' ')" -ForegroundColor DarkGray
 }catch{}
 Write-Host "Config       : $ConfigPath" -ForegroundColor DarkGray
@@ -45,7 +46,7 @@ Write-Host "Smoke repo   : $tmp" -ForegroundColor DarkGray
 
 Push-Location $tmp
 try{
-  & cn @args 1> $stdout 2> $stderr
+  & $cn.Source @cnArgs 1> $stdout 2> $stderr
   $code=[int]$LASTEXITCODE
 }finally{
   Pop-Location
@@ -57,7 +58,7 @@ $content=Get-Content -LiteralPath $target -Raw
 function Show-SmokeDiagnostics {
   Write-Host ''
   Write-Host '--- command ---' -ForegroundColor Yellow
-  Write-Host ('cn ' + (($args | ForEach-Object {
+  Write-Host ('cn ' + (($cnArgs | ForEach-Object {
     $v=[string]$_
     if($v -match '\s'){ '"' + ($v -replace '"','\"') + '"' } else { $v }
   }) -join ' '))
@@ -67,6 +68,9 @@ function Show-SmokeDiagnostics {
   if(Test-Path $stderr){Get-Content -LiteralPath $stderr|Select-Object -Last 200}else{Write-Host '<missing>'}
   Write-Host '--- effective config head ---' -ForegroundColor Yellow
   Get-Content -LiteralPath $ConfigPath|Select-Object -First 45
+  if(((-not (Test-Path $stdout)) -or (Get-Item $stdout).Length -eq 0) -and ((-not (Test-Path $stderr)) -or (Get-Item $stderr).Length -eq 0)){
+    Write-Host '[DIAG] cn returned no output. Run .\tests\TEST-CONTINUE-PREFLIGHT.ps1; if it requests authentication, run: cn login' -ForegroundColor Cyan
+  }
   Write-Host "--- diagnostic directory: $tmp ---" -ForegroundColor DarkGray
 }
 

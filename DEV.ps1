@@ -68,12 +68,24 @@ switch($Action){
   'install' {
     $code=Invoke-DevScript -ScriptPath (Join-Path $root 'VERIFY-PACKAGE.ps1')
     if($code -ne 0){exit $code}
+    Write-Host '[preflight] Continue CLI + Ollama + headless readiness...' -ForegroundColor Cyan
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\TEST-CONTINUE-PREFLIGHT.ps1')
+    if($code -ne 0){
+      Write-Host '[BLOCKED] Install skipped because Continue headless runtime is not ready.' -ForegroundColor Red
+      exit $code
+    }
+    Write-Host '[model] Selecting an installed model that passes a real Continue Edit/Write smoke...' -ForegroundColor Cyan
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\SELECT-WORKING-TOOL-MODEL.ps1')
+    if($code -ne 0){
+      Write-Host '[BLOCKED] Install skipped because no installed model passed Continue tool execution.' -ForegroundColor Red
+      exit $code
+    }
     $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\RUN-ALL.ps1') -Arguments @('-Profile','Full')
     if($code -ne 0){
       Write-Host '[BLOCKED] Install skipped because Full regression is NO-GO.' -ForegroundColor Red
       exit $code
     }
-    Write-Host '[gate] Real Continue tool smoke: cn must actually edit a temporary main.md...' -ForegroundColor Cyan
+    Write-Host '[gate] Real Continue tool smoke: selected model must actually edit a temporary main.md...' -ForegroundColor Cyan
     $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\RUN-CONTINUE-TOOL-SMOKE.ps1')
     if($code -ne 0){
       Write-Host '[BLOCKED] Install skipped because Continue/model tool execution is not operational.' -ForegroundColor Red

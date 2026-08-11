@@ -1,4 +1,7 @@
-# Local Coding Agent 1.0.0-rc.2
+﻿# Local Coding Agent 1.0.0-dev.1
+
+> Bootstrap fix: use `SETUP.cmd` (or `SETUP.ps1`) for first setup. The preflight now detects Continue CLI/Ollama/model readiness and explains the current Continue first-run authentication requirement instead of failing silently.
+
 
 ## Release qualification — one command
 
@@ -72,3 +75,7 @@ See `RELEASE-ACCEPTANCE.md` and `MAINTENANCE.md`.
 
 Installed runtime: `%USERPROFILE%\.continue\local-coding-agent`.
 The installer writes a runtime `VERSION` marker so release tests cannot accidentally qualify an old installed Core against a newer package.
+
+### Automatic tool-model compatibility selection
+
+`SETUP.cmd` does not assume that an Ollama model advertising `tools` is compatible with the installed Continue CLI. It runs a real isolated Edit/Write smoke and, when necessary, tries installed fallback coding models. The first model that actually edits the fixture is persisted in `config/selected-tool-model.txt` and used by the installed agent runtime.
