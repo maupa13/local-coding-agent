@@ -18,6 +18,8 @@ It verifies package integrity, the Full regression suite, installs exactly this 
 
 Release candidate for the first public stable line. Local-first coding agent for Windows/IntelliJ IDEA built around Continue CLI + Ollama, with managed permissions, engineering workflows, evidence, deterministic quality gates, and regression/release qualification.
 
+Полное руководство по подготовке проекта, ежедневным workflow, моделям, permissions и диагностике: [USER-GUIDE.md](USER-GUIDE.md).
+
 ## Install candidate
 
 ```powershell

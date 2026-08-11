@@ -13,7 +13,7 @@ $ModulePath = Join-Path $ContinueHome 'local-coding-agent\LocalCodingAgent.psm1'
 if (-not (Test-Path $ModulePath)) { throw "Installed module not found: $ModulePath. Run INSTALL.ps1 first." }
 # Remove stale legacy functions from the current shell, then import managed module globally.
 $legacy = @(
-  'agent','agent-idea','agent-idea-all','agent-fast','agent-tui','agent-ask','agent-plan','agent-auto','agent-resume','agent-check','agent-build','agent-one',
+  'agent','agent-idea','agent-idea-all','agent-fast','agent-tui','agent-ask','agent-team','agent-plan','agent-auto','agent-resume','agent-check','agent-build','agent-one',
   'agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result',
   'agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix',
   'agent-docs','agent-business','agent-architecture','agent-migration','agent-performance','agent-security',

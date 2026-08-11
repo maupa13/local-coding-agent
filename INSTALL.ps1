@@ -196,7 +196,7 @@ if (-not $SkipProfile) {
     $module = (Join-Path $AgentHome 'LocalCodingAgent.psm1').Replace("'","''")
     $block = @"
 $start
-`$legacyAgentFunctions = @('agent','agent-idea','agent-idea-all','agent-fast','agent-tui','agent-ask','agent-plan','agent-auto','agent-resume','agent-check','agent-build','agent-one','agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result','agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix','agent-docs','agent-business','agent-architecture','agent-migration','agent-performance','agent-security','agent-deliver-feature','agent-deliver-bugfix','agent-deliver-hotfix','agent-init','agent-help','agent-doctor','agent-workflows')
+`$legacyAgentFunctions = @('agent','agent-idea','agent-idea-all','agent-fast','agent-tui','agent-ask','agent-team','agent-plan','agent-auto','agent-resume','agent-check','agent-build','agent-one','agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result','agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix','agent-docs','agent-business','agent-architecture','agent-migration','agent-performance','agent-security','agent-deliver-feature','agent-deliver-bugfix','agent-deliver-hotfix','agent-init','agent-help','agent-doctor','agent-workflows')
 foreach (`$name in `$legacyAgentFunctions) { Remove-Item "Alias:`$name" -Force -ErrorAction SilentlyContinue; Remove-Item "Function:\global:`$name" -Force -ErrorAction SilentlyContinue }
 Remove-Module LocalCodingAgent -Force -ErrorAction SilentlyContinue
 Import-Module '$module' -Global -Force -DisableNameChecking

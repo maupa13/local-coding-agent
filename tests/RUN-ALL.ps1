@@ -80,6 +80,8 @@ Invoke-Test 'regression' 'STRICTMODE-HYGIENE' 'tests\VERIFY-STRICTMODE-TEST-HYGI
 Invoke-Test 'regression' 'COMPLIANCE-FINALIZER' 'tests\VERIFY-COMPLIANCE-FINALIZER-CONTRACT.ps1'
 Invoke-Test 'regression' 'SANDBOX-VERSION' 'tests\VERIFY-SANDBOX-VERSION.ps1'
 Invoke-Test 'regression' 'UTF8-CAPTURE' 'tests\VERIFY-UTF8-CAPTURE.ps1'
+Invoke-Test 'regression' 'PROJECT-BOOTSTRAP' 'tests\VERIFY-PROJECT-BOOTSTRAP.ps1'
+Invoke-Test 'regression' 'AGENTIC-PIPELINE' 'tests\VERIFY-AGENTIC-PIPELINE.ps1'
 if($Profile -in @('Full','Release')){
  $fixtureRoot=Join-Path $OutDir 'fixtures'
  New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null

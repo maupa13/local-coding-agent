@@ -17,8 +17,8 @@ Require 'requirements bundle missing' ($m -match 'function New-AgentRequirements
 Require 'absolute/local requirements path resolver missing' ($m -match 'function Resolve-RequirementLocalPath')
 Require 'exact URL ingestion missing' ($m -match 'Invoke-WebRequest -Uri \$candidate')
 Require 'requirements source rule not injected' ($m -match '--rule'',\$sourceBundle\.Path')
-Require 'Bash should be automatic in installed permission profile' ($p -match '(?m)^- Bash\(\*\)$')
-Require 'Bash ask prompts should be disabled' ($p -match '(?m)^ask:\s*\[\]\s*$')
+Require 'Bash should be automatic in installed permission profile' ($p -match '(?m)^- Bash\(\*\)\r?$')
+Require 'Bash ask prompts should be disabled' ($p -match '(?m)^ask:\s*\[\]\s*\r?$')
 Require 'destructive git push is not excluded' ($p -match 'Bash\(git push\*\)')
 Require 'dependency update is not excluded' ($p -match 'Bash\(cargo update\*\)')
 Require 'managed CLI does not broadly allow Bash' ($m -match "'--allow','Bash'")
@@ -29,4 +29,6 @@ Require 'protected pre-run snapshots missing' ($m -match 'function Save-Dependen
 Require 'diff quality function missing' ($m -match 'function Get-DiffQualitySignals')
 Require 'test-disable diff guard missing' ($m -match 'changed diff appears to disable or skip tests')
 Require 'quality warnings not persisted' ($m -match 'quality-report.txt')
+Require 'Python checks must require real Python markers' ($m -match '\$hasPythonTests=Get-ChildItem')
+Require 'Node quality checks must force verified node directory to PATH front' ($m -match '\$env:PATH=\$nodeDir\+'';''\+\$env:PATH')
 Write-Host '[PASS] alpha.8 quality engine / requirements ingestion / low-prompt permissions' -ForegroundColor Green

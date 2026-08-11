@@ -325,6 +325,13 @@ function Get-GitSnapshot {
     }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $snapshot }
     if (-not (Test-AgentGitMarker $RepositoryRoot)) { return $snapshot }
+    # Windows PowerShell 5.1 promotes native stderr to ErrorRecord when the
+    # caller uses ErrorActionPreference=Stop. Git may emit harmless LF/CRLF
+    # warnings while still returning valid stdout, so snapshot collection must
+    # never abort a completed model edit because of those warnings.
+    $oldEap=$ErrorActionPreference
+    $ErrorActionPreference='SilentlyContinue'
+    try {
     # Do not depend on $LASTEXITCODE here. In Windows PowerShell 5.1 it is easy for
     # native-command pipelines to leave stale state. A valid --show-toplevel result
     # is the authoritative repository test.
@@ -345,7 +352,8 @@ function Get-GitSnapshot {
         $snapshot.head = [string]$headLines[0]
         $branchLines = @(& git -C $RepositoryRoot rev-parse --abbrev-ref HEAD 2>$null)
         if ($branchLines.Count -gt 0) { $snapshot.branch = [string]$branchLines[0] }
-        $snapshot.diffStat = @(& git -C $RepositoryRoot diff --stat 2>$null)
+        $rawDiffStat=@(& git -C $RepositoryRoot diff --stat 2>&1)
+        $snapshot.diffStat = @($rawDiffStat|Where-Object {-not(Test-AgentNonFatalNativeWarning ([string]$_))})
     } else {
         $branchLines = @(& git -C $RepositoryRoot symbolic-ref --short HEAD 2>$null)
         if ($branchLines.Count -gt 0) { $snapshot.branch = [string]$branchLines[0] }
@@ -353,6 +361,9 @@ function Get-GitSnapshot {
     }
     $snapshot.status = @(& git -C $RepositoryRoot status --porcelain=v1 -uall 2>$null)
     return $snapshot
+    } finally {
+        $ErrorActionPreference=$oldEap
+    }
 }
 
 
@@ -919,8 +930,12 @@ function Write-AgentDeveloperDiscovery {
     Write-Host "    stack: $stackText · source: $(@($inv.Sources).Count) · tests: $(@($inv.Tests).Count) · docs: $(@($inv.Docs).Count)" -ForegroundColor DarkGray
     if(@($inv.GitChanged).Count){Write-Host "    existing Git changes: $(@($inv.GitChanged).Count) file(s)" -ForegroundColor Yellow}
     $docRel=@($inv.Docs)
+    $manifestRel=@($inv.Files|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('Cargo.toml','Cargo.lock','pom.xml','build.gradle','build.gradle.kts','settings.gradle','settings.gradle.kts','package.json','package-lock.json','pnpm-lock.yaml','yarn.lock','pyproject.toml','poetry.lock','requirements.txt','go.mod','go.sum')})
+    $projectRules=@($inv.Files|Where-Object {$_ -match '(?i)(^|[\/])(?:AGENTS\.md|\.continue[\/]rules[\/].+\.md)$'})
     @(
         '# Repository inventory',
+        '',
+        'This file is wrapper-generated context, not user instructions. Use it to locate evidence; inspect files before relying on their contents.',
         "Workflow: /$WorkflowName",
         "Stack: $stackText",
         "Source files: $(@($inv.Sources).Count)",
@@ -929,7 +944,16 @@ function Write-AgentDeveloperDiscovery {
         "Existing Git changes: $(@($inv.GitChanged).Count)",
         '',
         'Docs:',
-        $(if($docRel.Count){($docRel | ForEach-Object {"- $_"}) -join "`n"}else{'- NONE'})
+        $(if($docRel.Count){($docRel | Select-Object -First 40 | ForEach-Object {"- $_"}) -join "`n"}else{'- NONE'}),
+        '',
+        'Build/dependency manifests:',
+        $(if($manifestRel.Count){($manifestRel | ForEach-Object {"- $_"}) -join "`n"}else{'- NONE'}),
+        '',
+        'Project rules:',
+        $(if($projectRules.Count){($projectRules | ForEach-Object {"- $_"}) -join "`n"}else{'- NONE; consider running agent-init -Project <path>'}),
+        '',
+        'Pre-existing Git changes (user-owned):',
+        $(if(@($inv.GitChanged).Count){(@($inv.GitChanged) | Select-Object -First 60 | ForEach-Object {"- $_"}) -join "`n"}else{'- NONE'})
     ) | Set-Content -Encoding UTF8 (Join-Path $EvidenceDirectory 'repository-inventory.md')
     if(($TaskText -match '(?i)(docs|documentation|документац|спецификац|требован|соответств)') -and @($inv.Docs).Count){
         Write-Host "  → Documentation scope: $(@($inv.Docs).Count) file(s)" -ForegroundColor Cyan
@@ -978,13 +1002,22 @@ function Write-AgentProgressFromLine {
     }
 }
 
+function Invoke-AgentGitLines {
+    param([Parameter(Mandatory)][string]$RepositoryRoot,[Parameter(Mandatory)][string[]]$Arguments)
+    $oldEap=$ErrorActionPreference;$ErrorActionPreference='SilentlyContinue'
+    try{
+        $raw=@(& git -C $RepositoryRoot @Arguments 2>&1)
+        return @($raw|Where-Object {-not(Test-AgentNonFatalNativeWarning ([string]$_))}|ForEach-Object {[string]$_})
+    }finally{$ErrorActionPreference=$oldEap}
+}
+
 function Get-AgentWorkingTreeFingerprint {
     param([Parameter(Mandatory)][string]$RepositoryRoot)
     if(-not(Get-Command git -ErrorAction SilentlyContinue)){return $null}
     $gitSnapshot=Get-GitSnapshot $RepositoryRoot
     if(-not $gitSnapshot.isGit){return $null}
-    $statusLines=@(& git -C $RepositoryRoot status --porcelain=v1 -uall 2>$null)
-    $diff=(& git -C $RepositoryRoot diff HEAD --no-ext-diff --binary 2>$null | Out-String)
+    $statusLines=@(Invoke-AgentGitLines -RepositoryRoot $RepositoryRoot -Arguments @('status','--porcelain=v1','-uall'))
+    $diff=(Invoke-AgentGitLines -RepositoryRoot $RepositoryRoot -Arguments @('diff','HEAD','--no-ext-diff','--binary')|Out-String)
     $extra=New-Object 'System.Collections.Generic.List[string]'
     foreach($line in $statusLines){
         if(-not $line -or $line.Length -lt 4){continue}
@@ -1903,7 +1936,8 @@ function Get-DeterministicQualityCommands {
         elseif(Get-Command gradle -ErrorAction SilentlyContinue){[void]$commands.Add((New-QualityCommandSpec 'Gradle tests' 'gradle' @('-p',$dir,'test') $RepositoryRoot))}
     }
 
-    if((Get-Command python -ErrorAction SilentlyContinue) -and ((Test-Path (Join-Path $RepositoryRoot 'pytest.ini')) -or (Test-Path (Join-Path $RepositoryRoot 'pyproject.toml')) -or (Test-Path (Join-Path $RepositoryRoot 'tests')))){
+    $hasPythonTests=Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -Filter '*.py' -File -ErrorAction SilentlyContinue|Where-Object {$_.FullName -match '(?i)[\\/](?:test|tests)[\\/]'}|Select-Object -First 1
+    if((Get-Command python -ErrorAction SilentlyContinue) -and ((Test-Path (Join-Path $RepositoryRoot 'pytest.ini')) -or (Test-Path (Join-Path $RepositoryRoot 'pyproject.toml')) -or $hasPythonTests)){
         [void]$commands.Add((New-QualityCommandSpec 'Python tests' 'python' @('-m','pytest','-q','-p','no:cacheprovider') $RepositoryRoot))
     }
     if((Get-Command go -ErrorAction SilentlyContinue) -and (Test-Path (Join-Path $RepositoryRoot 'go.mod'))){[void]$commands.Add((New-QualityCommandSpec 'Go tests' 'go' @('test','./...') $RepositoryRoot))}
@@ -1919,7 +1953,11 @@ function Invoke-QualityCommand {
     $display = ([string]$Spec.Command) + ' ' + ((@($Spec.Arguments) | ForEach-Object { if(([string]$_) -match '\s'){ '"'+([string]$_).Replace('"','\"')+'"' }else{[string]$_} }) -join ' ')
     Write-Host "    • verify $($Spec.Name)..." -ForegroundColor DarkGray
     $oldEap=$ErrorActionPreference; $ErrorActionPreference='Continue'; $output=''; $code=1
-    $oldPyNoByte=$env:PYTHONDONTWRITEBYTECODE; $oldCi=$env:CI; $env:PYTHONDONTWRITEBYTECODE='1'; $env:CI='true'
+    $oldPyNoByte=$env:PYTHONDONTWRITEBYTECODE; $oldCi=$env:CI;$oldPath=$env:PATH; $env:PYTHONDONTWRITEBYTECODE='1'; $env:CI='true'
+    if(([string]$Spec.Command) -match '(?i)(?:^|[\\/])npm(?:\.cmd|\.ps1)?$'){
+        $node=Get-Command node.exe -ErrorAction SilentlyContinue
+        if($node){$nodeDir=Split-Path $node.Source -Parent;if($nodeDir){$env:PATH=$nodeDir+';'+$env:PATH}}
+    }
     $invokeArgs=@($Spec.Arguments)
     Push-Location $Spec.WorkingDirectory
     try {
@@ -1927,7 +1965,7 @@ function Invoke-QualityCommand {
         $code = $LASTEXITCODE
         if($null -eq $code){$code=0}
     } catch { $output = ($_ | Out-String); $code=1 }
-    finally { Pop-Location; $ErrorActionPreference=$oldEap; $env:PYTHONDONTWRITEBYTECODE=$oldPyNoByte; $env:CI=$oldCi }
+    finally { Pop-Location; $ErrorActionPreference=$oldEap; $env:PYTHONDONTWRITEBYTECODE=$oldPyNoByte; $env:CI=$oldCi;$env:PATH=$oldPath }
     $output | Set-Content -Encoding UTF8 $OutputPath
     $tail=Get-OutputTail $output 1800
     if($code -eq 0){Write-Host "    PASS" -ForegroundColor Green}else{Write-Host "    FAIL — details saved to $OutputPath" -ForegroundColor Red; if($script:AgentVerboseOutput -and $tail){Write-Host $tail -ForegroundColor DarkGray}}
@@ -1995,9 +2033,9 @@ function Get-DiffQualitySignals {
     $warnings = New-Object 'System.Collections.Generic.List[string]'
     $diff = ''
     if(Get-Command git -ErrorAction SilentlyContinue){
-        $inside=(& git -C $RepositoryRoot rev-parse --is-inside-work-tree 2>$null | Select-Object -First 1)
-        if($LASTEXITCODE -eq 0 -and $inside -eq 'true'){
-            try{$diff=(& git -C $RepositoryRoot diff HEAD --no-ext-diff --unified=0 2>$null | Out-String)}catch{$diff=(& git -C $RepositoryRoot diff --no-ext-diff --unified=0 2>$null | Out-String)}
+        $inside=(Invoke-AgentGitLines -RepositoryRoot $RepositoryRoot -Arguments @('rev-parse','--is-inside-work-tree')|Select-Object -First 1)
+        if($inside -eq 'true'){
+            $diff=(Invoke-AgentGitLines -RepositoryRoot $RepositoryRoot -Arguments @('diff','HEAD','--no-ext-diff','--unified=0')|Out-String)
         }
     }
     $diffPath=Join-Path $EvidenceDirectory 'quality-diff.txt'
@@ -2495,6 +2533,9 @@ function Get-AgentEffectiveConfig {
         [ValidateSet('work','fast','review','ask')][string]$Role='work',
         [switch]$Fast
     )
+    if ($Role -eq 'review' -and $Fast) {
+        return (New-AgentRuntimeModelConfig -BaseConfig $script:ConfigAgentFast -Model (Get-AgentRoleModel 'fast') -Role 'review-fast')
+    }
     if ($Role -eq 'review') {
         return (New-AgentRuntimeModelConfig -BaseConfig $script:ConfigAgent -Model (Get-AgentRoleModel 'review') -Role 'review')
     }
@@ -2717,6 +2758,84 @@ QUICK ANSWER:
     Write-Host ''
     Write-Host $answer
     Write-Host "  quick log: $out" -ForegroundColor DarkGray
+}
+
+function Set-AgentTeamPipelineState {
+    param([Parameter(Mandatory)]$Pipeline)
+    $state=Get-AgentState;$obj=[ordered]@{}
+    foreach($prop in $state.PSObject.Properties){$obj[$prop.Name]=$prop.Value}
+    $obj.teamPipeline=$Pipeline;$obj.updatedAt=(Get-Date).ToString('o')
+    Save-AgentState ([pscustomobject]$obj)
+}
+
+function Get-AgentLastPhaseResult {
+    $state=Get-AgentState
+    return [pscustomobject]@{
+        Status=if($state.PSObject.Properties['lastSemanticStatus']){[string]$state.lastSemanticStatus}else{'FAIL'}
+        EvidenceDirectory=if($state.PSObject.Properties['lastEvidenceDirectory']){[string]$state.lastEvidenceDirectory}else{$null}
+        QualityStatus=if($state.PSObject.Properties['lastQualityStatus']){[string]$state.lastQualityStatus}else{$null}
+    }
+}
+
+function Get-AgentPhaseSummary {
+    param([string]$EvidenceDirectory,[int]$MaxCharacters=6000)
+    if(-not $EvidenceDirectory){return ''}
+    $path=Join-Path $EvidenceDirectory 'final-result.txt'
+    if(-not(Test-Path -LiteralPath $path)){return ''}
+    $text=(Get-Content -LiteralPath $path -Raw -ErrorAction SilentlyContinue).Trim()
+    if($text.Length -gt $MaxCharacters){return $text.Substring(0,$MaxCharacters)}
+    return $text
+}
+
+function Invoke-AgentTeamPipeline {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [Parameter(Mandatory)][string]$Task,
+        [switch]$Fast,
+        [switch]$AllowDependencies
+    )
+    $root=Resolve-AgentProjectRoot -StartPath $ProjectRoot
+    $intent=Resolve-AgentIntent $Task
+    $implementationWorkflow=if($intent -match 'bugfix|hotfix'){'bugfix'}else{'feature'}
+    $pipeline=[ordered]@{id=(Get-Date -Format 'yyyyMMdd-HHmmss-fff');task=$Task;project=$root;status='RUNNING';currentPhase='planner';startedAt=(Get-Date).ToString('o');phases=@()}
+    Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    Write-Host ''
+    Write-Host 'TEAM PIPELINE · Planner → Implementer → Tester → Reviewer' -ForegroundColor Cyan
+
+    $phase=[ordered]@{role='planner';workflow='analysis';status='RUNNING';startedAt=(Get-Date).ToString('o')}
+    $pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    Invoke-AgentWorkflow -Workflow 'analyze' -DisplayWorkflow 'analysis' -Task @("TEAM ROLE: PLANNER. Investigate the task read-only. Produce an implementation plan grounded in code, constraints, acceptance criteria, risks, and exact verification commands. Do not modify files. Task: $Task") -Fast -ReadOnly -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
+    $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
+    if($phaseStatus -eq 'BLOCKED'){$pipeline.status='BLOCKED';$pipeline.currentPhase='planner';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+    $plan=Get-AgentPhaseSummary $result.EvidenceDirectory
+
+    $pipeline.currentPhase='implementer';$phase=[ordered]@{role='implementer';workflow=$implementationWorkflow;status='RUNNING';startedAt=(Get-Date).ToString('o')};$pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    $implementationTask="TEAM ROLE: IMPLEMENTER. Implement the original task from the CURRENT repository state. Use the planner report as evidence, but verify it against the repository. Original task: $Task`n`nPLANNER REPORT:`n$plan"
+    Invoke-AgentWorkflow -Workflow $implementationWorkflow -DisplayWorkflow $implementationWorkflow -Task @($implementationTask) -Fast:$Fast -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
+    $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
+    if($phaseStatus -in @('BLOCKED','FAIL')){$pipeline.status=$phaseStatus;$pipeline.currentPhase='implementer';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+
+    $pipeline.currentPhase='tester';$testerStatus=if($script:LastQualityStatus -in @('PASS','PASS WITH WARNINGS')){'PASS'}else{'FAIL'}
+    $tester=[pscustomobject][ordered]@{role='tester';workflow='deterministic-quality';status=$testerStatus;qualityStatus=$script:LastQualityStatus;evidenceDirectory=$result.EvidenceDirectory;startedAt=(Get-Date).ToString('o')}
+    $pipeline.phases=@($pipeline.phases)+@($tester);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    if($testerStatus -eq 'FAIL'){$pipeline.status='FAIL';Set-AgentTeamPipelineState ([pscustomobject]$pipeline);return [pscustomobject]$pipeline}
+
+    $pipeline.currentPhase='reviewer';$phase=[ordered]@{role='reviewer';workflow='review';status='RUNNING';startedAt=(Get-Date).ToString('o')};$pipeline.phases=@($pipeline.phases)+@([pscustomobject]$phase);Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    Invoke-AgentWorkflow -Workflow 'review' -DisplayWorkflow 'review' -Task @("TEAM ROLE: REVIEWER. Independently review the CURRENT diff against the original task and acceptance criteria. Inspect deterministic verification evidence. Read only; do not modify files. Original task: $Task") -Fast -ReadOnly -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
+    $result=Get-AgentLastPhaseResult;$phaseStatus=$result.Status;$pipeline.phases[-1].status=$phaseStatus;$pipeline.phases[-1]|Add-Member -NotePropertyName evidenceDirectory -NotePropertyValue $result.EvidenceDirectory -Force
+    $pipeline.currentPhase='complete';$pipeline.status=if($phaseStatus -in @('BLOCKED','FAIL')){$phaseStatus}else{'PASS'};$pipeline.finishedAt=(Get-Date).ToString('o');Set-AgentTeamPipelineState ([pscustomobject]$pipeline)
+    Write-Host "TEAM RESULT: $($pipeline.status)" -ForegroundColor $(if($pipeline.status -eq 'PASS'){'Green'}else{'Yellow'})
+    return [pscustomobject]$pipeline
+}
+
+function agent-team {
+    [CmdletBinding()]
+    param([string]$Project,[switch]$Fast,[switch]$AllowDependencies,[Parameter(ValueFromRemainingArguments=$true)][string[]]$Task)
+    $root=if($Project){Resolve-AgentProjectRoot -StartPath $Project}else{Get-AgentLastProject}
+    if(-not $root){throw 'No project selected. Use agent-team -Project C:\path\to\project <task>.'}
+    $taskText=Get-AgentTaskText $Task;if(-not $taskText){throw 'Team task is required.'}
+    Invoke-AgentTeamPipeline -ProjectRoot $root -Task $taskText -Fast:$Fast -AllowDependencies:$AllowDependencies
 }
 
 function agent-ask {
@@ -3073,7 +3192,9 @@ function Show-AgentCompactHelp {
     Write-Host '  /release           release readiness'
     Write-Host ''
     Write-Host 'Utility' -ForegroundColor Yellow
-    Write-Host '  /log  /verbose  /workflows  /deps  /continue  /result  /tui  /exit'
+    Write-Host '  /team <goal>       planner → implementer → tester → reviewer'
+    Write-Host '  /continue <answer> resume blocked/incomplete work with clarification'
+    Write-Host '  /log  /verbose  /workflows  /deps  /result  /tui  /exit'
     Write-Host '  project/trusted allow targeted dependency changes; /deps is mainly for safe/ask' -ForegroundColor DarkGray
     Write-Host ''
     Write-Host 'Plain text is auto-routed. Example: Реализуй требования из F:\docs\M2.md' -ForegroundColor DarkGray
@@ -3299,19 +3420,27 @@ function Start-AgentShell {
                 try{Invoke-AgentWorkflow -Workflow 'result' -DisplayWorkflow 'result' -Task @($taskForResult) -Fast:$Fast -ReadOnly -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies}catch{Write-Host "[FAIL] $($_.Exception.Message)" -ForegroundColor Red}
             }; continue
         }
-        if ($line -eq '/continue' -or $line -match '^(продолжай|дальше|continue|продолжить)$') {
+        if ($line -match '^/continue(?:\s+(.*))?$' -or $line -match '^(продолжай|дальше|continue|продолжить)$') {
+            $clarification=if($Matches.Count -gt 1){[string]$Matches[1]}else{''}
             $st = Get-AgentState
             if(-not $st.PSObject.Properties['resumableWorkflow'] -or -not $st.resumableWorkflow){Write-Host '[WARN] No previous managed workflow to continue.' -ForegroundColor Yellow;continue}
             $lastStatus = if($st.PSObject.Properties['resumableSemanticStatus']){[string]$st.resumableSemanticStatus}else{$null}
             if($lastStatus -eq 'PASS'){Write-Host "[PASS] Previous /$($st.resumableWorkflow) already ended PASS." -ForegroundColor Green;continue}
             $lastTask = if($st.PSObject.Properties['resumableTask']){[string]$st.resumableTask}else{''}
             $cont = "Continue the previous /$($st.resumableWorkflow) workflow from the CURRENT repository state. Original task: $lastTask. Previous semantic status: $lastStatus. Do not restart completed work; inspect Git diff/status and finish only the remaining safe work."
+            if(-not [string]::IsNullOrWhiteSpace($clarification)){$cont += " User clarification: $clarification"}
             try {
                 $spec = Resolve-AgentWorkflowSpec ([string]$st.resumableWorkflow); $workflowBase=[IO.Path]::GetFileNameWithoutExtension([string]$spec.file); $ro=([string]$spec.mode -eq 'read-only')
                 Invoke-AgentWorkflow -Workflow $workflowBase -DisplayWorkflow ([string]$spec.name) -Task @($cont) -Fast:$Fast -ReadOnly:$ro -Headless -Managed -ProjectRoot $root -AllowDependencies:$AllowDependencies
             } catch { Write-Host "[FAIL] $($_.Exception.Message)" -ForegroundColor Red }; continue
         }
         if ($line -eq '/tui') { Invoke-ContinueAgent -Fast:$Fast -Project $root; continue }
+        if ($line -match '^/team(?:\s+(.*))?$') {
+            $teamTask=[string]$Matches[1]
+            if([string]::IsNullOrWhiteSpace($teamTask)){$teamTask=Read-Host 'Team task/goal'}
+            try{Invoke-AgentTeamPipeline -ProjectRoot $root -Task $teamTask -Fast:$Fast -AllowDependencies:$AllowDependencies}catch{Write-Host "[FAIL] $($_.Exception.Message)" -ForegroundColor Red}
+            continue
+        }
 
         $name=$null; $task=$null
         if ($line -match '^/([^\s]+)(?:\s+(.*))?$') { $name=$Matches[1]; $task=$Matches[2] }
@@ -3441,6 +3570,8 @@ function Invoke-AgentWorkflow {
     Write-Host ''
     Write-Host "▶ /$workflowName" -ForegroundColor Cyan
     $inventory=Write-AgentDeveloperDiscovery -RepositoryRoot $root -WorkflowName $workflowName -TaskText $taskText -EvidenceDirectory $evidence.evidenceDirectory
+    $inventoryRule=Join-Path $evidence.evidenceDirectory 'repository-inventory.md'
+    if(Test-Path -LiteralPath $inventoryRule){$cnArgs += @('--rule',$inventoryRule)}
     $uiLanguage=Get-AgentLanguage $taskText
     if(Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText){
         Write-Host $(if($uiLanguage -eq 'ru'){'  → Сопоставление требований: документация → код → тесты'}else{'  → Compliance mapping: docs → implementation → tests'}) -ForegroundColor Cyan
@@ -3596,8 +3727,8 @@ function agent-deliver-hotfix { [CmdletBinding()] param([switch]$Fast,[switch]$H
 
 function agent-init {
     [CmdletBinding()]
-    param([switch]$Force)
-    $root = Resolve-AgentProjectRoot -AllowNonRepo
+    param([string]$Project,[switch]$Force)
+    $root = if($Project){Resolve-AgentProjectRoot -StartPath $Project -AllowNonRepo}else{Resolve-AgentProjectRoot -AllowNonRepo}
     $dir = Join-Path $root '.continue\rules'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $target = Join-Path $dir '00-project.md'
@@ -3605,39 +3736,89 @@ function agent-init {
         Write-Host "Project rule already exists: $target. Use agent-init -Force to regenerate." -ForegroundColor Yellow
         return
     }
-    $stack = @()
-    if (Test-Path (Join-Path $root 'pom.xml')) { $stack += 'Maven' }
-    if ((Test-Path (Join-Path $root 'build.gradle')) -or (Test-Path (Join-Path $root 'build.gradle.kts'))) { $stack += 'Gradle' }
-    if (Get-ChildItem $root -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue | Select-Object -First 1) { $stack += 'Java' }
-    if (Test-Path (Join-Path $root 'package.json')) { $stack += 'Node.js' }
-    if (Test-Path (Join-Path $root 'pyproject.toml')) { $stack += 'Python' }
-    $stackText = if ($stack.Count) { $stack -join ', ' } else { 'detect from repository' }
+    $inventory=Get-AgentRepositoryInventory $root
+    $stackText=if(@($inventory.Stacks).Count){@($inventory.Stacks)-join ', '}else{'unknown; inspect repository before choosing commands'}
+    $buildCommands=New-Object 'System.Collections.Generic.List[string]'
+    $testCommands=New-Object 'System.Collections.Generic.List[string]'
+    $moduleRoots=New-Object 'System.Collections.Generic.List[string]'
+    $manifests=@($inventory.Files|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('Cargo.toml','pom.xml','build.gradle','build.gradle.kts','package.json','pyproject.toml','go.mod')})
+    foreach($rel in $manifests){$parent=Split-Path ([string]$rel) -Parent;if(-not $parent){$parent='.'};if(-not $moduleRoots.Contains($parent)){$moduleRoots.Add($parent)}}
+
+    foreach($rel in @($manifests|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'Cargo.toml'})){
+        $full=Join-Path $root $rel;$locked=if(Test-Path (Join-Path (Split-Path $full -Parent) 'Cargo.lock')){' --locked'}else{''}
+        $buildCommands.Add("cargo build --manifest-path `"$full`"$locked");$testCommands.Add("cargo test --manifest-path `"$full`"$locked")
+    }
+    foreach($rel in @($manifests|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'pom.xml'})){
+        $full=Join-Path $root $rel;$moduleDir=Split-Path $full -Parent;$runner=if(Test-Path (Join-Path $moduleDir 'mvnw.cmd')){Join-Path $moduleDir 'mvnw.cmd'}elseif(Test-Path (Join-Path $root 'mvnw.cmd')){Join-Path $root 'mvnw.cmd'}else{'mvn'}
+        $buildCommands.Add("& `"$runner`" -f `"$full`" package -DskipTests");$testCommands.Add("& `"$runner`" -f `"$full`" test")
+    }
+    foreach($rel in @($manifests|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('build.gradle','build.gradle.kts')}|Select-Object -First 1)){
+        $moduleDir=Split-Path (Join-Path $root $rel) -Parent;$runner=if(Test-Path (Join-Path $moduleDir 'gradlew.bat')){Join-Path $moduleDir 'gradlew.bat'}elseif(Test-Path (Join-Path $root 'gradlew.bat')){Join-Path $root 'gradlew.bat'}else{'gradle'}
+        $buildCommands.Add("& `"$runner`" -p `"$moduleDir`" build -x test");$testCommands.Add("& `"$runner`" -p `"$moduleDir`" test")
+    }
+    foreach($rel in @($manifests|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'package.json'})){
+        $full=Join-Path $root $rel;$moduleDir=Split-Path $full -Parent
+        try{$pkg=Get-Content -LiteralPath $full -Raw|ConvertFrom-Json}catch{$pkg=$null}
+        if($pkg -and $pkg.scripts){
+            if($pkg.scripts.PSObject.Properties['build']){$buildCommands.Add("npm --prefix `"$moduleDir`" run build")}
+            if($pkg.scripts.PSObject.Properties['test'] -and [string]$pkg.scripts.test -notmatch 'no test specified'){$testCommands.Add("npm --prefix `"$moduleDir`" run test")}
+            elseif($pkg.scripts.PSObject.Properties['typecheck']){$testCommands.Add("npm --prefix `"$moduleDir`" run typecheck")}
+        }
+    }
+    if(Test-Path (Join-Path $root 'pyproject.toml')){$testCommands.Add("python -m pytest -q -p no:cacheprovider `"$root`"")}
+    if(Test-Path (Join-Path $root 'go.mod')){$testCommands.Add("go test `"$root\...`"")}
+    $sln=Get-ChildItem -LiteralPath $root -Filter '*.sln' -File -ErrorAction SilentlyContinue|Select-Object -First 1
+    if($sln){$buildCommands.Add("dotnet build `"$($sln.FullName)`" --nologo");$testCommands.Add("dotnet test `"$($sln.FullName)`" --nologo")}
+
+    $buildText=if($buildCommands.Count){($buildCommands|ForEach-Object{"- $_"})-join "`n"}else{'- Not detected; inspect the repository documentation before running a build.'}
+    $testText=if($testCommands.Count){($testCommands|ForEach-Object{"- $_"})-join "`n"}else{'- Not detected; inspect existing CI and test configuration before choosing a command.'}
+    $moduleText=if($moduleRoots.Count){($moduleRoots|ForEach-Object{"- $_"})-join "`n"}else{'- .'}
     @"
 ---
 name: Project Rules
 ---
 
-# Stable project facts
+# Verified project facts
 
 - Stack detected: $stackText
 - Repository root: $root
+- Source files discovered: $(@($inventory.Sources).Count)
+- Test files discovered: $(@($inventory.Tests).Count)
+- Documentation files discovered: $(@($inventory.Docs).Count)
 
-# Fill these with facts, not wishes
+# Module roots
 
-- Build command: TODO
-- Unit test command: TODO
-- Integration test command: TODO
+$moduleText
+
+# Build commands
+
+$buildText
+
+# Test commands
+
+$testText
+
+# Safety and compatibility
+
+- Treat existing Git changes as user-owned; inspect status and diff before editing.
+- Never edit generated output under node_modules, target, build, dist, out, coverage, .gradle, .idea, .venv, or venv.
+- Dependency manifests and lockfiles require explicit dependency opt-in.
+- Preserve public API, persisted schema, and event compatibility unless the task explicitly changes them.
+- Anchor build commands to the explicit manifest or project path shown above.
+
+# Project-specific facts to fill in when known
+
 - Module boundaries: TODO
 - API/event/schema compatibility constraints: TODO
 - Database migration conventions: TODO
 - Messaging/idempotency conventions: TODO
 - Performance/SLO constraints: TODO
 - Required release checks: TODO
-- Paths the agent must not modify: TODO
 
-Do not duplicate generic engineering rules here. Keep this file concise and stable.
+Only replace TODO values with facts supported by repository code, CI, or documentation. Keep this file concise and stable.
 "@ | Set-Content -Encoding UTF8 $target
-    Write-Host "Created: $target" -ForegroundColor Green
+    Write-Host "Created project rules: $target" -ForegroundColor Green
+    Write-Host "Detected: $stackText · modules $($moduleRoots.Count) · build commands $($buildCommands.Count) · test commands $($testCommands.Count)" -ForegroundColor DarkGray
 }
 
 function Test-OllamaToolCalling {
@@ -3693,7 +3874,7 @@ function agent-doctor {
     Check 'Evidence directory' { New-Item -ItemType Directory -Force -Path $script:EvidenceHome | Out-Null }
     Check 'Product permission runtime' {
         $pp=Join-Path $script:ContinueHome 'permissions.yaml'; if(-not(Test-Path $pp)){throw $pp}
-        $pt=Get-Content $pp -Raw; if($pt -notmatch '(?m)^- Bash\(\*\)$'){throw 'Bash automatic allow missing'}
+        $pt=Get-Content $pp -Raw; if($pt -notmatch '(?m)^- Bash\(\*\)\r?$'){throw 'Bash automatic allow missing'}
         if(-not(Get-Command Get-AgentManagedPolicyArgs -ErrorAction SilentlyContinue)){throw 'session permission modes missing'}
     }
     Check 'Quality Engine runtime' { if(-not(Get-Command Invoke-AgentWorkflow -ErrorAction SilentlyContinue)){throw 'runtime missing'}; if(-not(Test-Path (Join-Path $script:AgentHome 'LocalCodingAgent.psm1'))){throw 'module missing'} }
@@ -3796,6 +3977,7 @@ Core session controls:
   /idea all C:\Projects  create/update the button for every detected project
 
 Normal work:
+  /team <goal>           separate planner, implementer, deterministic tester, and reviewer stages
   /deliver <goal>        end-to-end feature delivery
   /bugfix <goal>         defect delivery
   /review                independent review
@@ -3814,7 +3996,7 @@ This quick lane is read-only and does not overwrite the main workflow state.
 
 Export-ModuleMember -Function @(
     'Invoke-ContinueAgent','Invoke-AgentWorkflow','Test-LocalCodingAgentComplianceExtractor','Test-LocalCodingAgentComplianceResult',
-    'Start-LocalCodingAgent','Install-AgentIdeaIntegration','Install-AgentIdeaIntegrations','Find-AgentIdeaProjects','Show-AgentIdeaIntegration','Remove-AgentIdeaIntegration','agent-idea','agent-idea-all','agent','agent-fast','agent-tui','agent-ask','agent-plan','agent-auto','agent-resume',
+    'Start-LocalCodingAgent','Install-AgentIdeaIntegration','Install-AgentIdeaIntegrations','Find-AgentIdeaProjects','Show-AgentIdeaIntegration','Remove-AgentIdeaIntegration','agent-idea','agent-idea-all','agent','agent-fast','agent-tui','agent-ask','agent-team','agent-plan','agent-auto','agent-resume',
     'agent-analyze','agent-feature','agent-bugfix','agent-hotfix','agent-refactor','agent-test','agent-review','agent-result',
     'agent-release','agent-release-feature','agent-release-bugfix','agent-release-hotfix',
     'agent-docs','agent-business','agent-architecture','agent-migration','agent-performance','agent-security',

@@ -18,6 +18,7 @@ Need 'workflow skills runtime' 'function Get-AgentWorkflowSkillPaths'
 Need 'skills passed as rules' 'Get-AgentWorkflowSkillPaths $Workflow'
 Need 'activation alias cleanup' 'Remove-Item "Alias:$name"' $a
 Need 'managed launcher function' 'function Start-LocalCodingAgent'
+Need 'doctor accepts Windows CRLF permission policy' "(?m)^- Bash\(\*\)\r?`$"
 Need 'activation launcher alias' 'Set-Alias -Name agent -Value Start-LocalCodingAgent -Scope Global -Force' $a
 Need 'installer alias cleanup' 'Remove-Item "Alias:`$name"' $i
 Need 'installer managed alias' 'Set-Alias -Name agent -Value Start-LocalCodingAgent -Scope Global -Force' $i

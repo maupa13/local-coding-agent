@@ -398,6 +398,20 @@
       "description": "Managed Continue YAML uses only documented schema fields: reasoning false under defaultCompletionOptions; no unsupported top-level experimental block; real smoke prints stdout/stderr/config on failure",
       "test": "tests/VERIFY-MODEL-TOOL-GATE.ps1",
       "tier": "regression"
+    },
+    {
+      "id": "REG-048",
+      "area": "project-bootstrap",
+      "description": "agent-init derives stack, module roots, anchored build/test commands, and safety rules from repository facts",
+      "test": "tests/VERIFY-PROJECT-BOOTSTRAP.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-049",
+      "area": "agentic-orchestration",
+      "description": "Team mode uses separate planner, implementer, deterministic tester, and reviewer stages; stops on blocking phases; and resumes with explicit user clarification",
+      "test": "tests/VERIFY-AGENTIC-PIPELINE.ps1",
+      "tier": "regression"
     }
   ]
 }

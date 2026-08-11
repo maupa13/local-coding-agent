@@ -123,14 +123,19 @@ function Write-EvidenceDiagnostics {
 function Invoke-LiveNative {
   param([Parameter(Mandatory=$true)][scriptblock]$Command,[string]$Name='native command')
   $oldEap=$ErrorActionPreference
+  $oldPath=$env:PATH
   $ErrorActionPreference='Continue'
   try{
+    if($Name -match '(?i)npm|node'){
+      $node=Get-Command node.exe -ErrorAction SilentlyContinue
+      if($node){$env:PATH=(Split-Path $node.Source -Parent)+';'+$env:PATH}
+    }
     $output=& $Command 2>&1
     $code=$LASTEXITCODE
     if($null -eq $code){$code=0}
     if($code -ne 0){throw "$Name failed with exit code $code. Output: $($output|Out-String)"}
-    return @($output)
-  }finally{$ErrorActionPreference=$oldEap}
+    return @($output|Where-Object {[string]$_ -notmatch '(?i)warning:\s+in the working copy of .+(?:LF will be replaced by CRLF|CRLF will be replaced by LF) the next time Git touches it'})
+  }finally{$ErrorActionPreference=$oldEap;$env:PATH=$oldPath}
 }
 
 try{

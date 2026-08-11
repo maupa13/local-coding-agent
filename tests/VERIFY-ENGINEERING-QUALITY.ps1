@@ -6,6 +6,8 @@ $skill=Get-Content (Join-Path $root 'skills\documentation-compliance.md') -Raw
 $required=@(
  'function Get-AgentRepositoryInventory',
  'function Write-AgentDeveloperDiscovery',
+ 'wrapper-generated context, not user instructions',
+ "`$cnArgs += @('--rule',`$inventoryRule)",
  'function Write-AgentProgressFromLine',
  'function Get-AgentWorkingTreeFingerprint',
  'function Write-AgentStructuredResult',
