@@ -1,7 +1,7 @@
 {
   "version": "1.0.0-dev",
   "verdict": "PASS",
-  "passed": 17,
+  "passed": 26,
   "failed": 0,
   "results": [
     {
@@ -12,17 +12,17 @@
     {
       "name": "JSON/test/scenario schema",
       "status": "PASS",
-      "detail": "44 tests, 22 scenarios"
+      "detail": "54 tests, 27 scenarios"
     },
     {
       "name": "PowerShell single UTF-8 BOM",
       "status": "PASS",
-      "detail": "61 files"
+      "detail": "72 files"
     },
     {
       "name": "core finalizer contracts",
       "status": "PASS",
-      "detail": "173 functions, 0 duplicates"
+      "detail": "178 functions, 0 duplicates"
     },
     {
       "name": "release fixture semantics",
@@ -73,6 +73,51 @@
       "name": "extractor generic-list free",
       "status": "PASS",
       "detail": "compliance extractor/helper use plain PowerShell arrays only"
+    },
+    {
+      "name": "runtime UX contract",
+      "status": "PASS",
+      "detail": "heartbeat + stall timeout + Russian UX + per-run change accounting"
+    },
+    {
+      "name": "DEV StrictMode exit code",
+      "status": "PASS",
+      "detail": "DEV StrictMode-safe child-script exit handling present"
+    },
+    {
+      "name": "Windows regression contract hygiene",
+      "status": "PASS",
+      "detail": "Windows regressions no longer self-fail on stale architecture or StrictMode interpolation"
+    },
+    {
+      "name": "project root selection",
+      "status": "PASS",
+      "detail": "current directory wins; no cross-project fallback/status leakage; per-run changed count"
+    },
+    {
+      "name": "document edit user journey",
+      "status": "PASS",
+      "detail": "root main.md docs + edit->docs + zero-change FAIL"
+    },
+    {
+      "name": "non-git inventory contract",
+      "status": "PASS",
+      "detail": "non-git inventory + unborn HEAD + StrictMode-safe doc routing verifier"
+    },
+    {
+      "name": "filesystem-first inventory",
+      "status": "PASS",
+      "detail": "filesystem-first docs/source inventory independent of git state"
+    },
+    {
+      "name": "PS5.1 path chars",
+      "status": "PASS",
+      "detail": "single backslash char in PS5.1 inventory TrimStart"
+    },
+    {
+      "name": "model tool gate",
+      "status": "PASS",
+      "detail": "supported reasoning-off config + real cn edit gate + full smoke diagnostics"
     },
     {
       "name": "StrictMode verifier hygiene",

@@ -69,6 +69,18 @@ function Test-IsAgentDistributionPath {
     return $true
 }
 
+function Test-AgentGitMarker {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $item = Get-Item -LiteralPath (Get-NormalizedPath $Path) -ErrorAction Stop
+        while ($null -ne $item) {
+            if (Test-Path -LiteralPath (Join-Path $item.FullName '.git')) { return $true }
+            $item = $item.Parent
+        }
+    } catch {}
+    return $false
+}
+
 function Resolve-AgentProjectRoot {
     [CmdletBinding()]
     param(
@@ -83,9 +95,9 @@ function Resolve-AgentProjectRoot {
     }
 
     $resolved = $null
-    if (Get-Command git -ErrorAction SilentlyContinue) {
+    if ((Get-Command git -ErrorAction SilentlyContinue) -and (Test-AgentGitMarker $start)) {
         $gitRoot = (& git -C $start rev-parse --show-toplevel 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -eq 0 -and $gitRoot) { $resolved = Get-NormalizedPath $gitRoot }
+        if ($gitRoot) { $resolved = Get-NormalizedPath $gitRoot }
     }
 
     if (-not $resolved) {
@@ -312,6 +324,7 @@ function Get-GitSnapshot {
         diffStat = @()
     }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $snapshot }
+    if (-not (Test-AgentGitMarker $RepositoryRoot)) { return $snapshot }
     # Do not depend on $LASTEXITCODE here. In Windows PowerShell 5.1 it is easy for
     # native-command pipelines to leave stale state. A valid --show-toplevel result
     # is the authoritative repository test.
@@ -326,13 +339,81 @@ function Get-GitSnapshot {
     if ([string]::IsNullOrWhiteSpace($topPath)) { return $snapshot }
     if (-not (Test-Path -LiteralPath $topPath -PathType Container)) { return $snapshot }
     $snapshot.isGit = $true
-    $branchLines = @(& git -C $RepositoryRoot rev-parse --abbrev-ref HEAD 2>$null)
-    if ($branchLines.Count -gt 0) { $snapshot.branch = [string]$branchLines[0] }
-    $headLines = @(& git -C $RepositoryRoot rev-parse HEAD 2>$null)
-    if ($headLines.Count -gt 0) { $snapshot.head = [string]$headLines[0] }
+    $headLines = @(& git -C $RepositoryRoot rev-parse --verify HEAD 2>$null)
+    $hasHead = $headLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$headLines[0])
+    if ($hasHead) {
+        $snapshot.head = [string]$headLines[0]
+        $branchLines = @(& git -C $RepositoryRoot rev-parse --abbrev-ref HEAD 2>$null)
+        if ($branchLines.Count -gt 0) { $snapshot.branch = [string]$branchLines[0] }
+        $snapshot.diffStat = @(& git -C $RepositoryRoot diff --stat 2>$null)
+    } else {
+        $branchLines = @(& git -C $RepositoryRoot symbolic-ref --short HEAD 2>$null)
+        if ($branchLines.Count -gt 0) { $snapshot.branch = [string]$branchLines[0] }
+        $snapshot.diffStat = @()
+    }
     $snapshot.status = @(& git -C $RepositoryRoot status --porcelain=v1 -uall 2>$null)
-    $snapshot.diffStat = @(& git -C $RepositoryRoot diff --stat 2>$null)
     return $snapshot
+}
+
+
+function Get-AgentLanguage {
+    param([string]$Text)
+    if(-not [string]::IsNullOrWhiteSpace($Text) -and $Text -match '[А-Яа-яЁё]'){return 'ru'}
+    return 'en'
+}
+
+function Get-AgentWorkingFileState {
+    param([Parameter(Mandatory)][string]$RepositoryRoot)
+    $state=[ordered]@{}
+    $snap=Get-GitSnapshot $RepositoryRoot
+    if(-not $snap.isGit){return $state}
+    foreach($line in @($snap.status)){
+        if(-not $line -or $line.Length -lt 4){continue}
+        $rel=$line.Substring(3).Trim()
+        if($rel -match ' -> '){$rel=($rel -split ' -> ')[-1]}
+        $full=Join-Path $RepositoryRoot $rel
+        $hash='MISSING'
+        if(Test-Path -LiteralPath $full -PathType Leaf){
+            try{$hash=(Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash}catch{$hash='UNREADABLE'}
+        }elseif(Test-Path -LiteralPath $full -PathType Container){$hash='DIRECTORY'}
+        $state[$rel]=$hash
+    }
+    return $state
+}
+
+function Get-AgentRunFileDelta {
+    param([Parameter(Mandatory)]$Context)
+    $before=@{}
+    if($Context.beforeWorkingFiles){
+        if($Context.beforeWorkingFiles -is [System.Collections.IDictionary]){
+            foreach($k in $Context.beforeWorkingFiles.Keys){$before[[string]$k]=[string]$Context.beforeWorkingFiles[$k]}
+        }else{
+            foreach($p in $Context.beforeWorkingFiles.PSObject.Properties){$before[$p.Name]=[string]$p.Value}
+        }
+    }
+    $after=Get-AgentWorkingFileState -RepositoryRoot $Context.repositoryRoot
+    $agent=@()
+    foreach($k in $after.Keys){
+        if(-not $before.ContainsKey([string]$k) -or [string]$before[[string]$k] -ne [string]$after[$k]){$agent += [string]$k}
+    }
+    foreach($k in $before.Keys){
+        if(-not $after.Contains([string]$k)){$agent += [string]$k}
+    }
+    return [pscustomobject]@{
+        PreExisting=@($before.Keys|Sort-Object)
+        AgentChanged=@($agent|Sort-Object -Unique)
+        Current=@($after.Keys|Sort-Object)
+    }
+}
+
+function Get-AgentModelLabelFromConfig {
+    param([string]$Config)
+    try{
+        foreach($line in @(Get-Content -LiteralPath $Config -ErrorAction Stop)){
+            if($line -match '^\s*model:\s*(.+?)\s*$'){return $Matches[1].Trim('"'' ')}
+        }
+    }catch{}
+    return 'configured model'
 }
 
 function Get-DependencySensitiveState {
@@ -449,6 +530,8 @@ function Start-AgentEvidence {
         finishedAt = $null
         exitCode = $null
         before = Get-GitSnapshot $RepositoryRoot
+        beforeWorkingFiles = Get-AgentWorkingFileState $RepositoryRoot
+        language = Get-AgentLanguage $Task
         after = $null
         semanticStatus = $null
         qualityStatus = $null
@@ -468,23 +551,47 @@ function Write-AgentStructuredResult {
     param([Parameter(Mandatory)]$Context)
     $path=Join-Path $Context.evidenceDirectory 'final-result.txt'
     if(-not(Test-Path -LiteralPath $path)){return}
-    $workflow=[string]$Context.workflow
-    $fullReport=$workflow -in @('analysis','analyze','review','release','release-feature','release-bugfix','release-hotfix','result','architecture')
     $text=Get-Content -LiteralPath $path -Raw
     if([string]::IsNullOrWhiteSpace($text)){return}
+    $lang=if($Context.language){[string]$Context.language}else{Get-AgentLanguage ([string]$Context.task)}
+    $workflow=[string]$Context.workflow
+    $fullReport=$workflow -in @('analysis','analyze','review','release','release-feature','release-bugfix','release-hotfix','result','architecture')
+
     Write-Host ''
-    Write-Host '  Developer report' -ForegroundColor Cyan
+    Write-Host $(if($lang -eq 'ru'){'  Результат'}else{'  Result'}) -ForegroundColor Cyan
+
+    $lines=@($text -split "`r?`n")
+    $display=New-Object System.Collections.ArrayList
+    foreach($line in $lines){
+        $out=$line
+        if($lang -eq 'ru'){
+            if($line -match '^FINAL RESULT:\s*(.+)$'){$out="Статус: $($Matches[1])"}
+            elseif($line -match '^WORKFLOW:\s*(.+)$'){$out="Режим: $($Matches[1])"}
+            elseif($line -eq 'SUMMARY'){$out='ИТОГ'}
+            elseif($line -eq 'CHANGED FILES'){$out='ИЗМЕНЕНО АГЕНТОМ'}
+            elseif($line -eq 'VERIFICATION'){$out='ПРОВЕРКА'}
+            elseif($line -eq 'ACCEPTANCE'){$out='ВЫПОЛНЕНИЕ'}
+            elseif($line -eq 'RISKS / NOT VERIFIED'){$out='РИСКИ / НЕ ПРОВЕРЕНО'}
+            elseif($line -eq 'NEXT'){$out='ДАЛЬШЕ'}
+            elseif($line -eq 'COMPLIANCE MATRIX'){$out='МАТРИЦА СООТВЕТСТВИЯ'}
+        }
+        [void]$display.Add($out)
+    }
+
     if($fullReport){
-        $lines=@($text -split "`r?`n")
-        $max=90
-        foreach($line in @($lines|Select-Object -First $max)){Write-Host "    $line"}
-        if($lines.Count -gt $max){Write-Host "    ... report truncated; full result: $path" -ForegroundColor DarkGray}
+        $max=100
+        foreach($line in @($display|Select-Object -First $max)){Write-Host "    $line"}
+        if($display.Count -gt $max){
+            Write-Host $(if($lang -eq 'ru'){"    ... отчёт сокращён; полный результат: $path"}else{"    ... report truncated; full result: $path"}) -ForegroundColor DarkGray
+        }
         return
     }
+
     $summary=[regex]::Match($text,'(?ims)^SUMMARY\s*\r?\n(.*?)(?=^CHANGED FILES\s*$)')
     if($summary.Success){
-        $body=$summary.Groups[1].Value.Trim()
-        foreach($line in @($body -split "`r?`n"|Select-Object -First 8)){if($line.Trim()){Write-Host "    $line"}}
+        foreach($line in @($summary.Groups[1].Value.Trim() -split "`r?`n"|Select-Object -First 10)){
+            if($line.Trim()){Write-Host "    $line"}
+        }
     }
 }
 
@@ -494,33 +601,33 @@ function Write-AgentRunnerSummary {
         [Parameter(Mandatory)][int]$ExitCode,
         [string]$SemanticStatus
     )
-    $after = Get-GitSnapshot $Context.repositoryRoot
-    $changed = @()
-    if ($after.isGit) {
-        foreach ($line in @($after.status)) {
-            if ($line -and $line.Length -ge 4) { $changed += $line.Substring(3).Trim() }
-        }
-    }
-    $runnerStatus = if ($ExitCode -eq 0) { 'PASS' } else { 'FAIL' }
-    $summaryPath = Join-Path $Context.evidenceDirectory 'runner-result.txt'
-    $elapsed = $null
-    try { $elapsed = (Get-Date) - ([DateTime]::Parse([string]$Context.startedAt)) } catch { }
-    $elapsedText = if($elapsed){'{0:mm\:ss}' -f $elapsed}else{'--:--'}
-    $lines = @()
-    $lines += "RUNNER RESULT: $runnerStatus"
-    $lines += "WORKFLOW: $($Context.workflow)"
-    $lines += "CLI EXIT CODE: $ExitCode"
-    $lines += "SEMANTIC RESULT: $(if($SemanticStatus){$SemanticStatus}else{'NOT CAPTURED'})"
-    $lines += "QUALITY GATE: $(if($Context.qualityStatus){$Context.qualityStatus}else{'NOT CAPTURED'})"
-    $lines += "QUALITY SCORE: $(if($null -ne $Context.qualityScore){[string]$Context.qualityScore + '/100'}else{'NOT CAPTURED'})"
-    $lines += "ELAPSED: $elapsedText"
-    $lines += "REPOSITORY: $($Context.repositoryRoot)"
-    $lines += "EVIDENCE: $($Context.evidenceDirectory)"
-    $lines += 'CHANGED FILES:'
-    if ($changed.Count -eq 0) { $lines += '- NONE DETECTED' } else { foreach ($file in ($changed | Sort-Object -Unique)) { $lines += "- $file" } }
+    $after=Get-GitSnapshot $Context.repositoryRoot
+    $delta=Get-AgentRunFileDelta -Context $Context
+    $changed=@($delta.AgentChanged)
+    $preExisting=@($delta.PreExisting)
+    $runnerStatus=if($ExitCode -eq 0){'PASS'}else{'FAIL'}
+    $summaryPath=Join-Path $Context.evidenceDirectory 'runner-result.txt'
+    $elapsed=$null
+    try{$elapsed=(Get-Date)-([DateTime]::Parse([string]$Context.startedAt))}catch{}
+    $elapsedText=if($elapsed){'{0:mm\:ss}' -f $elapsed}else{'--:--'}
+    $lines=@(
+        "RUNNER RESULT: $runnerStatus",
+        "WORKFLOW: $($Context.workflow)",
+        "CLI EXIT CODE: $ExitCode",
+        "SEMANTIC RESULT: $(if($SemanticStatus){$SemanticStatus}else{'NOT CAPTURED'})",
+        "QUALITY GATE: $(if($Context.qualityStatus){$Context.qualityStatus}else{'NOT CAPTURED'})",
+        "QUALITY SCORE: $(if($null -ne $Context.qualityScore){[string]$Context.qualityScore + '/100'}else{'NOT CAPTURED'})",
+        "ELAPSED: $elapsedText",
+        "REPOSITORY: $($Context.repositoryRoot)",
+        "EVIDENCE: $($Context.evidenceDirectory)",
+        'AGENT CHANGED FILES:'
+    )
+    if($changed.Count){foreach($file in $changed){$lines += "- $file"}}else{$lines += '- NONE'}
+    $lines += 'PRE-EXISTING CHANGES:'
+    if($preExisting.Count){foreach($file in $preExisting){$lines += "- $file"}}else{$lines += '- NONE'}
     $lines += ''
-    $lines += 'NOTE: RUNNER RESULT only confirms Continue CLI process completion. Semantic workflow PASS still requires the agent final report and required verification.'
-    $lines | Set-Content -Encoding UTF8 $summaryPath
+    $lines += 'NOTE: RUNNER RESULT only confirms process completion. Semantic workflow PASS still requires a valid final report and required verification.'
+    $lines|Set-Content -Encoding UTF8 -LiteralPath $summaryPath
 
     Write-Host ''
     $q=if($Context.qualityStatus){[string]$Context.qualityStatus}else{'N/A'}
@@ -529,9 +636,18 @@ function Write-AgentRunnerSummary {
     $color=if($statusText -eq 'PASS' -and $q -in @('PASS','N/A')){'Green'}elseif($statusText -eq 'FAIL' -or $q -eq 'FAIL'){'Red'}else{'Yellow'}
     $gateLabel=if(Test-WorkflowUsesQualityEngine ([string]$Context.workflow)){'QUALITY'}else{'GUARDS'}
     Write-Host "$(if($statusText -eq 'PASS'){'✓'}elseif($statusText -eq 'FAIL'){'✗'}else{'•'}) /$($Context.workflow)  RESULT $statusText  |  $gateLabel $q  |  SCORE $qs  |  $elapsedText" -ForegroundColor $color
-    Write-Host "  changed: $($changed.Count) file(s)  |  evidence: $($Context.evidenceDirectory)" -ForegroundColor DarkGray
-    if (-not $SemanticStatus) { Write-Host '  semantic result NOT CAPTURED; process completion is not task success.' -ForegroundColor Yellow }
-    elseif(-not $script:AgentVerboseOutput){Write-AgentStructuredResult -Context $Context}
+
+    $lang=if($Context.language){[string]$Context.language}else{'en'}
+    if($lang -eq 'ru'){
+        Write-Host "  изменено агентом: $($changed.Count) · было изменено до запуска: $($preExisting.Count)" -ForegroundColor DarkGray
+        Write-Host "  логи: $($Context.evidenceDirectory)" -ForegroundColor DarkGray
+        if(-not $SemanticStatus){Write-Host '  результат модели не получен; завершение процесса не считается выполнением задачи.' -ForegroundColor Yellow}
+    }else{
+        Write-Host "  changed by agent: $($changed.Count) · pre-existing changes: $($preExisting.Count)" -ForegroundColor DarkGray
+        Write-Host "  evidence: $($Context.evidenceDirectory)" -ForegroundColor DarkGray
+        if(-not $SemanticStatus){Write-Host '  semantic result NOT CAPTURED; process completion is not task success.' -ForegroundColor Yellow}
+    }
+    if($SemanticStatus -and -not $script:AgentVerboseOutput){Write-AgentStructuredResult -Context $Context}
 }
 
 function Complete-AgentEvidence {
@@ -743,30 +859,56 @@ function Get-ProjectPolicyArgs {
 
 function Get-AgentRepositoryInventory {
     param([Parameter(Mandatory)][string]$RepositoryRoot)
+
+    # Inventory is filesystem-first by design. Git state must never decide whether
+    # source/docs exist: a new repository, an unborn HEAD, or a plain folder is still
+    # a perfectly valid project workspace.
     $exclude='(?i)(^|[\\/])(?:\.git|node_modules|target|build|dist|out|\.idea|\.gradle|\.venv|venv|coverage)([\\/]|$)'
-    $rels=@()
-    if(Get-Command git -ErrorAction SilentlyContinue){
-        $gitSnapshot=Get-GitSnapshot $RepositoryRoot
-        if($gitSnapshot.isGit){$rels=@(& git -C $RepositoryRoot ls-files --cached --others --exclude-standard 2>$null)}
-    }
-    if(-not $rels.Count){
-        $rels=@(Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File -ErrorAction SilentlyContinue | Where-Object {$_.FullName -notmatch $exclude} | ForEach-Object {$_.FullName.Substring($RepositoryRoot.Length).TrimStart([char[]]@('\\','/'))})
-    }
-    $rels=@($rels|Where-Object {$_ -and $_ -notmatch $exclude}|Sort-Object -Unique)
+    $rels=@(
+        Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch $exclude } |
+        ForEach-Object {
+            $_.FullName.Substring($RepositoryRoot.Length).TrimStart([char]'\',[char]'/')
+        } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Sort-Object -Unique
+    )
+
     $sourceExt=@('.rs','.java','.kt','.kts','.py','.ts','.tsx','.js','.jsx','.cs','.go','.cpp','.c','.h','.hpp','.sql','.ps1','.psm1')
-    $docRel=@($rels|Where-Object {$_ -match '(?i)^docs[\\/]'})
+    $docExt=@('.md','.markdown','.mdown','.txt','.rst','.adoc','.yaml','.yml','.json')
+
+    $docRel=@($rels|Where-Object {
+        $rel=[string]$_
+        $ext=[IO.Path]::GetExtension($rel).ToLowerInvariant()
+        ($rel -match '(?i)^docs[\\/]') -or
+        ($docExt -contains $ext) -or
+        ([IO.Path]::GetFileName($rel) -match '(?i)^(README|SPEC|REQUIREMENTS|ARCHITECTURE|DESIGN)(\.[^.]+)?$')
+    })
     $sourceRel=@($rels|Where-Object {$sourceExt -contains [IO.Path]::GetExtension([string]$_).ToLowerInvariant()})
     $testRel=@($sourceRel|Where-Object {$_ -match '(?i)(^|[\\/])(?:test|tests|spec|specs)([\\/]|$)|(?i)(?:Test|Tests|Spec)\.[^.]+$|(?i)\.(?:test|spec)\.[^.]+$'})
-    $stacks=New-Object 'System.Collections.Generic.List[string]'
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'Cargo.toml'}|Select-Object -First 1){[void]$stacks.Add('Rust')}
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'pom.xml'}|Select-Object -First 1){[void]$stacks.Add('Maven')}
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('build.gradle','build.gradle.kts')}|Select-Object -First 1){[void]$stacks.Add('Gradle')}
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'package.json'}|Select-Object -First 1){[void]$stacks.Add('Node')}
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('pyproject.toml','requirements.txt')}|Select-Object -First 1){[void]$stacks.Add('Python')}
-    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'go.mod'}|Select-Object -First 1){[void]$stacks.Add('Go')}
-    if($rels|Where-Object {[IO.Path]::GetExtension([string]$_) -eq '.sln'}|Select-Object -First 1){[void]$stacks.Add('.NET')}
-    $gitChanged=@(Get-AgentChangedFiles $RepositoryRoot)
-    return [pscustomobject]@{Docs=@($docRel);Sources=@($sourceRel);Tests=@($testRel);Stacks=@($stacks|Select-Object -Unique);GitChanged=@($gitChanged);Files=@($rels)}
+
+    $stacks=@()
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'Cargo.toml'}|Select-Object -First 1){$stacks+='Rust'}
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'pom.xml'}|Select-Object -First 1){$stacks+='Maven'}
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('build.gradle','build.gradle.kts')}|Select-Object -First 1){$stacks+='Gradle'}
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'package.json'}|Select-Object -First 1){$stacks+='Node'}
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -in @('pyproject.toml','requirements.txt')}|Select-Object -First 1){$stacks+='Python'}
+    if($rels|Where-Object {[IO.Path]::GetFileName([string]$_) -eq 'go.mod'}|Select-Object -First 1){$stacks+='Go'}
+    if($rels|Where-Object {[IO.Path]::GetExtension([string]$_) -eq '.sln'}|Select-Object -First 1){$stacks+='.NET'}
+
+    # Git is optional metadata only. If unavailable/non-git/unborn, changed files is
+    # simply empty; inventory remains valid.
+    $gitChanged=@()
+    try{$gitChanged=@(Get-AgentChangedFiles $RepositoryRoot)}catch{$gitChanged=@()}
+
+    return [pscustomobject]@{
+        Docs=@($docRel)
+        Sources=@($sourceRel)
+        Tests=@($testRel)
+        Stacks=@($stacks|Select-Object -Unique)
+        GitChanged=@($gitChanged)
+        Files=@($rels)
+    }
 }
 
 function Write-AgentDeveloperDiscovery {
@@ -798,24 +940,41 @@ function Write-AgentDeveloperDiscovery {
 }
 
 function Write-AgentProgressFromLine {
-    param([string]$Line,[hashtable]$Seen)
+    param(
+        [string]$Line,
+        [hashtable]$Seen,
+        [ValidateSet('ru','en')][string]$Language='en'
+    )
     if([string]::IsNullOrWhiteSpace($Line)){return}
     $text=$Line.Trim()
     if($text.Length -gt 700){return}
-    $label=$null
-    if($text -match '(?i)\b(?:Read|read_file)\b.*?([A-Za-z0-9_.\\/\-]+\.[A-Za-z0-9]+)'){ $label="read $($Matches[1])" }
-    elseif($text -match '(?i)\b(?:Search|Grep|search)\b\s*[:(]?\s*([^\r\n]{1,100})'){
-        $matchedSearch = [string]$Matches[1]
-        $matchedSearch = $matchedSearch.Trim()
-        $matchedSearch = $matchedSearch.TrimEnd(')')
-        $label = "search $matchedSearch"
+    $action=$null;$detail=$null
+    if($text -match '(?i)\b(?:Read|read_file)\b.*?([A-Za-z0-9_.\\/\-]+\.[A-Za-z0-9]+)'){
+        $action='read';$detail=$Matches[1]
+    }elseif($text -match '(?i)\b(?:Search|Grep|search)\b\s*[:(]?\s*([^\r\n]{1,100})'){
+        $action='search';$detail=([string]$Matches[1]).Trim().TrimEnd(')')
+    }elseif($text -match '(?i)\b(?:Edit|Write|MultiEdit|write_file|edit_file)\b.*?([A-Za-z0-9_.\\/\-]+\.[A-Za-z0-9]+)'){
+        $action='change';$detail=$Matches[1]
+    }elseif($text -match '(?i)\b(?:cargo|mvnw?|gradlew?|npm|pnpm|yarn|pytest|dotnet|go)\b[^\r\n]{0,160}'){
+        $action='run';$detail=$Matches[0].Trim()
+    }elseif($text -match '(?i)\bgit\s+(?:status|diff|log)\b[^\r\n]{0,120}'){
+        $action='inspect';$detail=$Matches[0].Trim()
     }
-    elseif($text -match '(?i)\b(?:Edit|Write|MultiEdit|write_file|edit_file)\b.*?([A-Za-z0-9_.\\/\-]+\.[A-Za-z0-9]+)'){ $label="change $($Matches[1])" }
-    elseif($text -match '(?i)\b(?:cargo|mvnw?|gradlew?|npm|pnpm|yarn|pytest|dotnet|go)\b[^\r\n]{0,160}'){ $label="run $($Matches[0].Trim())" }
-    elseif($text -match '(?i)\bgit\s+(?:status|diff|log)\b[^\r\n]{0,120}'){ $label="inspect $($Matches[0].Trim())" }
-    if($label){
+    if($action){
+        $label=if($Language -eq 'ru'){
+            switch($action){
+                'read'{"читает $detail"}
+                'search'{"ищет $detail"}
+                'change'{"изменяет $detail"}
+                'run'{"запускает $detail"}
+                'inspect'{"проверяет $detail"}
+            }
+        }else{"$action $detail"}
         $key=$label.ToLowerInvariant()
-        if(-not $Seen.ContainsKey($key)){$Seen[$key]=$true;Write-Host "    • $label" -ForegroundColor DarkGray}
+        if(-not $Seen.ContainsKey($key)){
+            $Seen[$key]=$true
+            Write-Host "      • $label" -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -888,7 +1047,7 @@ function Invoke-AgentComplianceRecovery {
         [Parameter(Mandatory)][string]$WorkflowFile,
         [Parameter(Mandatory)][string]$ComplianceSkill
     )
-    Write-Host '  → Compliance recovery: previous pass did not answer the requested docs ↔ code analysis' -ForegroundColor Yellow
+    Write-Host $(if((Get-AgentLanguage $Task) -eq 'ru'){'  → Повторный анализ: первый ответ не выполнил сопоставление документации и кода'}else{'  → Compliance recovery: previous pass did not answer the requested docs ↔ code analysis'}) -ForegroundColor Yellow
     $inventoryPath=Join-Path $Evidence.evidenceDirectory 'repository-inventory.md'
     $previousEvidence = if([string]::IsNullOrWhiteSpace($PreviousOutput)){'[NO MODEL OUTPUT WAS CAPTURED FROM THE FIRST PASS. Inspect the repository and complete the task from source evidence now.]'}else{$PreviousOutput}
     $prompt=@"
@@ -911,11 +1070,13 @@ You must now finish the task in this run:
 Previous incomplete output is evidence of what was already inspected, not a reason to stop:
 $previousEvidence
 "@
-    $args=@('--config',$Config,'--rule',$WorkflowFile,'--rule',$ComplianceSkill)
+    $languageDirective=if((Get-AgentLanguage $Task) -eq 'ru'){'Отвечай пользователю по-русски; служебные FINAL RESULT и WORKFLOW оставь на английском.'}else{'Respond to the user in English.'}
+    $prompt=$languageDirective+"`n`n"+$prompt
+    $args=@('--config',$Config,'--rule',$WorkflowFile,'--rule',$ComplianceSkill,'--silent')
     if(Test-Path -LiteralPath $inventoryPath){$args += @('--rule',$inventoryPath)}
     $args += (Get-ReadOnlyPolicyArgs)
     $args += @('-p',$prompt)
-    return Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath (Join-Path $Evidence.evidenceDirectory 'compliance-recovery-output.txt') -DeveloperProgress
+    return Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath (Join-Path $Evidence.evidenceDirectory 'compliance-recovery-output.txt') -DeveloperProgress -Language (Get-AgentLanguage $Task)
 }
 
 function Remove-AgentAnsi {
@@ -943,112 +1104,232 @@ function Invoke-CnCaptured {
         [Parameter(Mandatory)][string[]]$Arguments,
         [Parameter(Mandatory)][string]$OutputPath,
         [switch]$ShowLiveOutput,
-        [switch]$DeveloperProgress
+        [switch]$DeveloperProgress,
+        [ValidateSet('ru','en')][string]$Language='en',
+        [int]$HeartbeatSeconds=10,
+        [int]$StallWarningSeconds=60,
+        [int]$MaxRuntimeSeconds=600
     )
-    $lines = New-Object 'System.Collections.Generic.List[string]'
-    $nativeWarnings = New-Object 'System.Collections.Generic.List[string]'
-    $nativeErrors = New-Object 'System.Collections.Generic.List[string]'
+    $lines=@()
+    $nativeWarnings=@()
+    $nativeErrors=@()
     $progressSeen=@{}
-    if (Test-Path $OutputPath) { Remove-Item $OutputPath -Force }
-    $outputDirectory = Split-Path -Parent $OutputPath
-    if (-not (Test-Path -LiteralPath $outputDirectory)) { New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null }
+    if(Test-Path -LiteralPath $OutputPath){Remove-Item -LiteralPath $OutputPath -Force}
+    $outputDirectory=Split-Path -Parent $OutputPath
+    if(-not(Test-Path -LiteralPath $outputDirectory)){New-Item -ItemType Directory -Force -Path $outputDirectory|Out-Null}
 
-    $oldNoColor=$env:NO_COLOR; $oldTerm=$env:TERM; $oldCi=$env:CI; $oldForceColor=$env:FORCE_COLOR
-    $env:NO_COLOR='1'; $env:TERM='dumb'; $env:CI='true'; $env:FORCE_COLOR='0'
+    $configPath=$null
+    for($i=0;$i -lt $Arguments.Count-1;$i++){if($Arguments[$i] -eq '--config'){$configPath=$Arguments[$i+1];break}}
+    $modelLabel=Get-AgentModelLabelFromConfig $configPath
 
-    # IMPORTANT: do not use PowerShell's native `2>&1` capture in the parent process.
-    # Windows PowerShell 5.1 can promote harmless native stderr records (for example
-    # Git LF/CRLF notices emitted by Continue tools) into ErrorRecord objects.  We
-    # isolate Continue in a child PowerShell process and capture stdout/stderr with
-    # System.Diagnostics.Process.  The child's numeric exit code is authoritative.
-    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('LocalCodingAgent-native-' + [guid]::NewGuid().ToString('N'))
-    $argsPath = Join-Path $tempRoot 'arguments.clixml'
-    $runnerPath = Join-Path $tempRoot 'runner.ps1'
-    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
-    @($Arguments) | Export-Clixml -LiteralPath $argsPath
+    $oldNoColor=$env:NO_COLOR;$oldTerm=$env:TERM;$oldCi=$env:CI;$oldForceColor=$env:FORCE_COLOR
+    $env:NO_COLOR='1';$env:TERM='dumb';$env:FORCE_COLOR='0'
+
+    $tempRoot=Join-Path ([System.IO.Path]::GetTempPath()) ('LocalCodingAgent-native-'+[guid]::NewGuid().ToString('N'))
+    $argsPath=Join-Path $tempRoot 'arguments.clixml'
+    $runnerPath=Join-Path $tempRoot 'runner.ps1'
+    $stdoutPath=Join-Path $tempRoot 'stdout.txt'
+    $stderrPath=Join-Path $tempRoot 'stderr.txt'
+    New-Item -ItemType Directory -Force -Path $tempRoot|Out-Null
+    @($Arguments)|Export-Clixml -LiteralPath $argsPath
+
     @'
-param([Parameter(Mandatory=$true)][string]$ArgumentsPath)
+param(
+  [Parameter(Mandatory=$true)][string]$ArgumentsPath,
+  [Parameter(Mandatory=$true)][string]$StdoutPath,
+  [Parameter(Mandatory=$true)][string]$StderrPath
+)
 $ErrorActionPreference='Continue'
-$utf8 = New-Object System.Text.UTF8Encoding($false)
-try { [Console]::InputEncoding=$utf8; [Console]::OutputEncoding=$utf8; $global:OutputEncoding=$utf8 } catch {}
+$utf8=New-Object System.Text.UTF8Encoding($false)
+try{[Console]::InputEncoding=$utf8;[Console]::OutputEncoding=$utf8;$global:OutputEncoding=$utf8}catch{}
 $env:PYTHONIOENCODING='utf-8'
-$cnArguments = @(Import-Clixml -LiteralPath $ArgumentsPath)
-& cn @cnArguments
+$cnArguments=@(Import-Clixml -LiteralPath $ArgumentsPath)
+& cn @cnArguments 1> $StdoutPath 2> $StderrPath
 $code=$LASTEXITCODE
 if($null -eq $code){$code=0}
 exit [int]$code
-'@ | Set-Content -LiteralPath $runnerPath -Encoding UTF8
+'@|Set-Content -LiteralPath $runnerPath -Encoding UTF8
 
-    try {
+    $process=$null
+    $timedOut=$false
+    $cancelled=$false
+    $started=Get-Date
+    $lastBytes=-1L
+    $processedStdoutLines=0
+    $lastActivity=$started
+    $nextHeartbeat=$started.AddSeconds([math]::Max(2,$HeartbeatSeconds))
+
+    try{
         $powershellExe=(Get-Command powershell.exe -ErrorAction Stop).Source
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $powershellExe
-        $escapedRunner = $runnerPath.Replace('"','\"')
-        $escapedArgs = $argsPath.Replace('"','\"')
-        $psi.Arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "' + $escapedRunner + '" -ArgumentsPath "' + $escapedArgs + '"'
-        $psi.WorkingDirectory = $RepositoryRoot
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $utf8 = New-Object System.Text.UTF8Encoding($false)
-        if($psi.PSObject.Properties['StandardOutputEncoding']){$psi.StandardOutputEncoding=$utf8}
-        if($psi.PSObject.Properties['StandardErrorEncoding']){$psi.StandardErrorEncoding=$utf8}
-        $process = New-Object System.Diagnostics.Process
-        $process.StartInfo = $psi
-        if (-not $process.Start()) { throw 'Failed to start Continue child process.' }
+        $psi=New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName=$powershellExe
+        $psi.Arguments='-NoLogo -NoProfile -ExecutionPolicy Bypass -File "'+$runnerPath+'" -ArgumentsPath "'+$argsPath+'" -StdoutPath "'+$stdoutPath+'" -StderrPath "'+$stderrPath+'"'
+        $psi.WorkingDirectory=$RepositoryRoot
+        $psi.UseShellExecute=$false
+        $psi.CreateNoWindow=$true
+        $process=New-Object System.Diagnostics.Process
+        $process.StartInfo=$psi
+        if(-not $process.Start()){throw 'Failed to start Continue child process.'}
 
-        # Read both redirected streams asynchronously to avoid pipe deadlocks on long model output.
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-        $stdout = $stdoutTask.Result
-        $stderr = $stderrTask.Result
-        $exitCode = [int]$process.ExitCode
-        $process.Dispose()
-
-        foreach($raw in @($stdout -split "`r?`n")) {
-            $line = Remove-AgentAnsi ([string]$raw)
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            [void]$lines.Add($line)
-            Add-Content -Encoding UTF8 -Path $OutputPath -Value $line
-            if ($ShowLiveOutput -or $script:AgentVerboseOutput) { Write-Host $line }
-            elseif($DeveloperProgress) { Write-AgentProgressFromLine -Line $line -Seen $progressSeen }
+        $childPid=$process.Id
+        if($Language -eq 'ru'){
+            Write-Host "    ● модель: $modelLabel · PID $childPid" -ForegroundColor DarkGray
+            Write-Host "      работа началась; Ctrl+C — отменить" -ForegroundColor DarkGray
+        }else{
+            Write-Host "    ● model: $modelLabel · PID $childPid" -ForegroundColor DarkGray
+            Write-Host "      running; Ctrl+C to cancel" -ForegroundColor DarkGray
         }
-        foreach($raw in @($stderr -split "`r?`n")) {
-            $line = Remove-AgentAnsi ([string]$raw)
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            if (Test-AgentNonFatalNativeWarning $line) {
-                [void]$nativeWarnings.Add($line)
-                if ($ShowLiveOutput -or $script:AgentVerboseOutput) { Write-Host "[WARN] $line" -ForegroundColor Yellow }
-            } else {
-                [void]$nativeErrors.Add($line)
-                # Preserve non-warning stderr in model evidence.  It is diagnostic text;
-                # the child exit code decides whether the managed run failed.
-                [void]$lines.Add($line)
-                Add-Content -Encoding UTF8 -Path $OutputPath -Value ('[stderr] ' + $line)
-                if ($ShowLiveOutput -or $script:AgentVerboseOutput) { Write-Host "[stderr] $line" -ForegroundColor DarkYellow }
+
+        while(-not $process.WaitForExit(1000)){
+            $now=Get-Date
+            $elapsed=[int]($now-$started).TotalSeconds
+            $stdoutBytes=if(Test-Path -LiteralPath $stdoutPath){(Get-Item -LiteralPath $stdoutPath).Length}else{0}
+            $stderrBytes=if(Test-Path -LiteralPath $stderrPath){(Get-Item -LiteralPath $stderrPath).Length}else{0}
+            $bytes=[int64]$stdoutBytes+[int64]$stderrBytes
+            if($bytes -ne $lastBytes){
+                $lastBytes=$bytes
+                $lastActivity=$now
+                if(Test-Path -LiteralPath $stdoutPath){
+                    $current=@(Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue)
+                    if($current.Count -gt $processedStdoutLines){
+                        for($j=$processedStdoutLines;$j -lt $current.Count;$j++){
+                            $liveLine=Remove-AgentAnsi ([string]$current[$j])
+                            if([string]::IsNullOrWhiteSpace($liveLine)){continue}
+                            if($ShowLiveOutput -or $script:AgentVerboseOutput){Write-Host $liveLine}
+                            elseif($DeveloperProgress){Write-AgentProgressFromLine -Line $liveLine -Seen $progressSeen -Language $Language}
+                        }
+                        $processedStdoutLines=$current.Count
+                    }
+                }
+            }
+
+            if($elapsed -ge $MaxRuntimeSeconds){
+                $timedOut=$true
+                break
+            }
+
+            if($now -ge $nextHeartbeat){
+                $quiet=[int]($now-$lastActivity).TotalSeconds
+                $elapsedText='{0:mm\:ss}' -f ($now-$started)
+                if($Language -eq 'ru'){
+                    $state=if($bytes -gt 0){"получено $bytes байт"}else{'вывод пока не получен'}
+                    Write-Host "    ● работает $elapsedText · $state · без нового вывода ${quiet}с" -ForegroundColor DarkGray
+                    if($quiet -ge $StallWarningSeconds){
+                        Write-Host "      ⚠ Continue/модель пока не отдают новый вывод; процесс всё ещё жив. Ctrl+C — отменить." -ForegroundColor Yellow
+                    }
+                }else{
+                    $state=if($bytes -gt 0){"received $bytes bytes"}else{'no output yet'}
+                    Write-Host "    ● running $elapsedText · $state · quiet ${quiet}s" -ForegroundColor DarkGray
+                    if($quiet -ge $StallWarningSeconds){
+                        Write-Host "      ⚠ Continue/model has not produced new output yet; process is still alive. Ctrl+C to cancel." -ForegroundColor Yellow
+                    }
+                }
+                $nextHeartbeat=$now.AddSeconds([math]::Max(2,$HeartbeatSeconds))
             }
         }
-    } finally {
-        $env:NO_COLOR=$oldNoColor; $env:TERM=$oldTerm; $env:CI=$oldCi; $env:FORCE_COLOR=$oldForceColor
+
+        if($timedOut){
+            try{& taskkill.exe /PID $process.Id /T /F *> $null}catch{try{$process.Kill()}catch{}}
+            $elapsedText='{0:mm\:ss}' -f ((Get-Date)-$started)
+            $timeoutText=if($Language -eq 'ru'){
+                "Модель/Continue не завершили задачу за $elapsedText. Процесс остановлен по таймауту ${MaxRuntimeSeconds}с."
+            }else{
+                "The model/Continue did not finish within $elapsedText. The process was stopped after ${MaxRuntimeSeconds}s."
+            }
+            $timeoutReport=@(
+                'FINAL RESULT: FAIL',
+                'WORKFLOW: runtime',
+                '',
+                'SUMMARY',
+                $timeoutText,
+                '',
+                'CHANGED FILES',
+                '- NOT VERIFIED',
+                '',
+                'VERIFICATION',
+                '- Continue CLI: FAIL - runtime timeout',
+                '',
+                'ACCEPTANCE',
+                '- Requested task: FAIL',
+                '',
+                'RISKS / NOT VERIFIED',
+                '- The model did not return a complete result before timeout.',
+                '',
+                'NEXT',
+                $(if($Language -eq 'ru'){'Повторите задачу после проверки модели/контекста или используйте более быстрый режим.'}else{'Retry after checking the model/context or use a faster mode.'})
+            ) -join "`n"
+            $timeoutReport|Set-Content -Encoding UTF8 -LiteralPath $OutputPath
+        }else{
+            $process.WaitForExit()
+        }
+
+        $exitCode=if($timedOut){124}else{[int]$process.ExitCode}
+
+        $stdout=if(Test-Path -LiteralPath $stdoutPath){Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue}else{''}
+        $stderr=if(Test-Path -LiteralPath $stderrPath){Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue}else{''}
+
+        if(-not $timedOut){
+            $outIndex=0
+            foreach($raw in @($stdout -split "`r?`n")){
+                $line=Remove-AgentAnsi ([string]$raw)
+                if([string]::IsNullOrWhiteSpace($line)){$outIndex++;continue}
+                $lines += $line
+                Add-Content -Encoding UTF8 -LiteralPath $OutputPath -Value $line
+                if($outIndex -ge $processedStdoutLines){
+                    if($ShowLiveOutput -or $script:AgentVerboseOutput){Write-Host $line}
+                    elseif($DeveloperProgress){Write-AgentProgressFromLine -Line $line -Seen $progressSeen -Language $Language}
+                }
+                $outIndex++
+            }
+        }else{
+            $lines=@(Get-Content -LiteralPath $OutputPath -ErrorAction SilentlyContinue)
+        }
+
+        foreach($raw in @($stderr -split "`r?`n")){
+            $line=Remove-AgentAnsi ([string]$raw)
+            if([string]::IsNullOrWhiteSpace($line)){continue}
+            if(Test-AgentNonFatalNativeWarning $line){
+                $nativeWarnings += $line
+                if($ShowLiveOutput -or $script:AgentVerboseOutput){Write-Host "[WARN] $line" -ForegroundColor Yellow}
+            }else{
+                $nativeErrors += $line
+                Add-Content -Encoding UTF8 -LiteralPath $OutputPath -Value ('[stderr] '+$line)
+                if($ShowLiveOutput -or $script:AgentVerboseOutput){Write-Host "[stderr] $line" -ForegroundColor DarkYellow}
+            }
+        }
+
+        if($nativeWarnings.Count){
+            @($nativeWarnings)|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $outputDirectory 'native-warnings.txt')
+        }
+        if($nativeErrors.Count){
+            @($nativeErrors)|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $outputDirectory 'native-stderr.txt')
+        }
+
+        return [pscustomobject]@{
+            ExitCode=[int]$exitCode
+            Output=($lines -join "`n")
+            NativeWarnings=@($nativeWarnings)
+            NativeErrors=@($nativeErrors)
+            TimedOut=[bool]$timedOut
+            ElapsedSeconds=[int]((Get-Date)-$started).TotalSeconds
+        }
+    }catch [System.Management.Automation.PipelineStoppedException]{
+        $cancelled=$true
+        if($process -and -not $process.HasExited){
+            try{& taskkill.exe /PID $process.Id /T /F *> $null}catch{try{$process.Kill()}catch{}}
+        }
+        throw
+    }finally{
+        if($process){
+            try{
+                if(-not $process.HasExited -and ($timedOut -or $cancelled)){try{$process.Kill()}catch{}}
+                $process.Dispose()
+            }catch{}
+        }
+        $env:NO_COLOR=$oldNoColor;$env:TERM=$oldTerm;$env:CI=$oldCi;$env:FORCE_COLOR=$oldForceColor
         Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-
-    if ($nativeWarnings.Count -gt 0) {
-        $warningPath = Join-Path $outputDirectory 'native-warnings.txt'
-        @($nativeWarnings) | Set-Content -Encoding UTF8 $warningPath
-        if (-not $ShowLiveOutput -and -not $script:AgentVerboseOutput) {
-            Write-Host "  ⚠ native warnings: $($nativeWarnings.Count) (non-fatal; saved to evidence)" -ForegroundColor Yellow
-        }
-    }
-    if ($nativeErrors.Count -gt 0) {
-        $stderrPath = Join-Path $outputDirectory 'native-stderr.txt'
-        @($nativeErrors) | Set-Content -Encoding UTF8 $stderrPath
-    }
-    return [pscustomobject]@{ ExitCode=[int]$exitCode; Output=($lines -join "`n"); NativeWarnings=@($nativeWarnings); NativeErrors=@($nativeErrors) }
 }
-
 
 function Get-AgentTerminalFinalReport {
     param([string]$Text)
@@ -1338,12 +1619,18 @@ function Write-DeterministicComplianceFinalResult {
     }
     if($requirements.Count -eq 0){return $null}
 
+    $lang=Get-AgentLanguage $Task
+    $complianceSummary=if($lang -eq 'ru'){
+        'Модель не вернула корректный отчёт о соответствии. Wrapper построил консервативную матрицу по документации, ссылкам на реализацию и тестам. Такой резервный анализ никогда автоматически не повышается до PASS.'
+    }else{
+        'The model did not produce a valid compliance report. The wrapper generated a conservative repository-grounded matrix from documentation, implementation references, and test references. Static evidence is never promoted to PASS by this fallback.'
+    }
     $lines=@(
         'FINAL RESULT: PARTIAL',
         "WORKFLOW: $WorkflowName",
         '',
         'SUMMARY',
-        'The model did not produce a valid compliance report. The wrapper generated a conservative repository-grounded matrix from documentation, implementation references, and test references. Static evidence is never promoted to PASS by this fallback.',
+        $complianceSummary,
         '',
         'COMPLIANCE MATRIX',
         '| Requirement | Status | Implementation evidence | Test/verification evidence |',
@@ -1379,7 +1666,7 @@ function Write-DeterministicComplianceFinalResult {
     $out|Set-Content -Encoding UTF8 (Join-Path $Evidence.evidenceDirectory 'final-result.txt')
     $meta=[ordered]@{kind='deterministic-compliance';status='PARTIAL';workflow=$WorkflowName;requirementCount=$requirements.Count;generatedAt=(Get-Date).ToString('o');details=$details}
     $meta|ConvertTo-Json -Depth 8|Set-Content -Encoding UTF8 (Join-Path $Evidence.evidenceDirectory 'wrapper-finalized.json')
-    Write-Host "  → Wrapper finalizer: compliance matrix generated for $($requirements.Count) requirement(s)" -ForegroundColor Yellow
+    Write-Host $(if($lang -eq 'ru'){"  → Резервный анализ: построена матрица для $($requirements.Count) требований"}else{"  → Wrapper finalizer: compliance matrix generated for $($requirements.Count) requirement(s)"}) -ForegroundColor Yellow
     return [pscustomobject]@{Status='PARTIAL';Output=$out}
 }
 
@@ -1390,38 +1677,85 @@ function Write-DeterministicWorkflowFinalResult {
         [string]$Task,
         [int]$ExitCode
     )
-    $changed=@(Get-AgentChangedFiles $Evidence.repositoryRoot)
-    $status=if($ExitCode -ne 0){'FAIL'}else{'PARTIAL'}
+    $delta=Get-AgentRunFileDelta -Context $Evidence
+    $changed=@($delta.AgentChanged)
+    $preExisting=@($delta.PreExisting)
+    $lang=Get-AgentLanguage $Task
+    $normallyChanges=Test-WorkflowNormallyChangesCode $WorkflowName
+
+    # A read-only analysis with no valid model answer is a failed analysis, not a
+    # successful/partial answer. Mutating workflows may remain PARTIAL if repository
+    # work exists and later deterministic verification can prove it.
+    $status=if($ExitCode -ne 0){'FAIL'}elseif(-not $normallyChanges){'FAIL'}else{'PARTIAL'}
+
+    if($lang -eq 'ru'){
+        $summary=if($ExitCode -ne 0){
+            'Процесс модели завершился с ошибкой. Агент сохранил диагностику и не считает задачу выполненной.'
+        }elseif(-not $normallyChanges){
+            'Модель не вернула полноценный ответ. Анализ не считается выполненным; вместо псевдо-результата сохранена диагностика.'
+        }else{
+            'Модель не вернула полноценный итоговый отчёт. Состояние считается предварительным и может быть подтверждено только детерминированными проверками.'
+        }
+        $risk='Полноценный смысловой ответ модели не получен.'
+        $next=if($ExitCode -ne 0){
+            'Откройте логи текущего запуска и устраните ошибку runtime/model перед повтором.'
+        }else{
+            'Повторите задачу после проверки модели/контекста; для диагностики используйте /log full.'
+        }
+    }else{
+        $summary=if($ExitCode -ne 0){
+            'The model process failed. Diagnostics were preserved and the task is not considered complete.'
+        }elseif(-not $normallyChanges){
+            'The model did not return a complete answer. The analysis is treated as failed rather than presenting a pseudo-result.'
+        }else{
+            'The model did not return a complete final report. The state is provisional until deterministic verification proves the repository result.'
+        }
+        $risk='A complete semantic model answer was not captured.'
+        $next=if($ExitCode -ne 0){'Inspect the current run logs and fix the runtime/model failure before retrying.'}else{'Retry after checking the model/context; use /log full for diagnostics.'}
+    }
+
     $lines=@(
         "FINAL RESULT: $status",
         "WORKFLOW: $WorkflowName",
         '',
         'SUMMARY',
-        $(if($ExitCode -ne 0){'The model process failed. The wrapper preserved repository evidence and did not infer task success.'}else{'The model did not emit a valid final report. The wrapper created a provisional result from repository state; deterministic quality gates decide whether a mutating workflow can be promoted to PASS.'}),
+        $summary,
         '',
         'CHANGED FILES'
     )
-    if($changed.Count){foreach($f in $changed){$lines += "- $f"}}else{$lines += '- NONE DETECTED'}
+    if($changed.Count){foreach($f in $changed){$lines += "- $f"}}else{$lines += '- NONE'}
     $lines += @(
         '',
         'VERIFICATION',
         "- Continue CLI exit code: $(if($ExitCode -eq 0){'PASS'}else{'FAIL'}) - $ExitCode",
         '- Semantic model report: NOT CAPTURED',
-        '- Wrapper finalization: PROVISIONAL',
+        '- Wrapper finalization: DIAGNOSTIC ONLY',
         '',
         'ACCEPTANCE',
         "- Requested task: $status",
         '',
         'RISKS / NOT VERIFIED',
-        '- A provisional wrapper result can become PASS only after deterministic checks and an independent review do not fail.',
+        "- $risk",
         '',
         'NEXT',
-        $(if($ExitCode -ne 0){'Inspect native-stderr.txt/model-output.txt and rerun after fixing the runtime failure.'}else{'Continue to deterministic quality verification.'})
+        $next
     )
     $out=$lines -join "`n"
-    $out|Set-Content -Encoding UTF8 (Join-Path $Evidence.evidenceDirectory 'final-result.txt')
-    [ordered]@{kind='deterministic-workflow';status=$status;workflow=$WorkflowName;changedFiles=$changed;generatedAt=(Get-Date).ToString('o')}|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 (Join-Path $Evidence.evidenceDirectory 'wrapper-finalized.json')
-    Write-Host "  → Wrapper finalizer: provisional $status from repository evidence" -ForegroundColor Yellow
+    $out|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $Evidence.evidenceDirectory 'final-result.txt')
+    [ordered]@{
+        kind='deterministic-workflow'
+        status=$status
+        workflow=$WorkflowName
+        changedByAgent=$changed
+        preExistingChanges=$preExisting
+        generatedAt=(Get-Date).ToString('o')
+    }|ConvertTo-Json -Depth 6|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $Evidence.evidenceDirectory 'wrapper-finalized.json')
+
+    if($lang -eq 'ru'){
+        Write-Host "  → Итог wrapper: $status · полноценный ответ модели не получен" -ForegroundColor $(if($status -eq 'FAIL'){'Red'}else{'Yellow'})
+    }else{
+        Write-Host "  → Wrapper finalizer: $status · complete model answer not captured" -ForegroundColor $(if($status -eq 'FAIL'){'Red'}else{'Yellow'})
+    }
     return [pscustomobject]@{Status=$status;Output=$out}
 }
 
@@ -1497,7 +1831,7 @@ function Test-WorkflowUsesQualityEngine {
 
 function Test-WorkflowNormallyChangesCode {
     param([Parameter(Mandatory)][string]$WorkflowName)
-    return ($WorkflowName -in @('feature','bugfix','hotfix','refactor','migration','performance','security','deliver-feature','deliver-bugfix','deliver-hotfix'))
+    return ($WorkflowName -in @('feature','bugfix','hotfix','refactor','test','docs','migration','performance','security','deliver-feature','deliver-bugfix','deliver-hotfix'))
 }
 
 function Get-AgentChangedFiles {
@@ -1886,10 +2220,12 @@ Do not continue or start another implementation workflow. Inspect the CURRENT re
 PRIOR RUNNER OUTPUT TAIL:
 $tail
 "@
-    $args = @('--config',$Config,'--rule',$resultRule) + (Get-ReadOnlyPolicyArgs) + @('-p',$prompt)
+    $languageDirective=if((Get-AgentLanguage $Task) -eq 'ru'){'Отвечай пользователю по-русски; служебные FINAL RESULT и WORKFLOW оставь на английском.'}else{'Respond to the user in English.'}
+    $prompt=$languageDirective+"`n`n"+$prompt
+    $args = @('--config',$Config,'--rule',$resultRule,'--silent') + (Get-ReadOnlyPolicyArgs) + @('-p',$prompt)
     $path = Join-Path $Evidence.evidenceDirectory 'recovery-output.txt'
-    Write-Host '  • Recovering missing final result...' -ForegroundColor Yellow
-    return Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath $path
+    Write-Host $(if((Get-AgentLanguage $Task) -eq 'ru'){'  • Восстанавливаю итоговый ответ...'}else{'  • Recovering missing final result...'}) -ForegroundColor Yellow
+    return Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath $path -Language (Get-AgentLanguage $Task)
 }
 
 function Get-AgentGlobalSettings {
@@ -2140,6 +2476,13 @@ function New-AgentRuntimeModelConfig {
     $text = $modelRx.Replace($text,"  model: $Model",1)
     $text = $contextRx.Replace($text,"    contextLength: $($budget.Context)",1)
     $text = $tokensRx.Replace($text,"    maxTokens: $($budget.Output)",1)
+    $reasoningRx = [regex]'(?m)^\s{4}reasoning:\s*(?:true|false)\s*$'
+    if($reasoningRx.IsMatch($text)){
+        $text=$reasoningRx.Replace($text,'    reasoning: false',1)
+    }else{
+        $topKRx=[regex]'(?m)^(\s{4}topK:\s*\d+\s*)$'
+        if($topKRx.IsMatch($text)){$text=$topKRx.Replace($text,"`$1`r`n    reasoning: false",1)}
+    }
     $safe = ($Model -replace '[^A-Za-z0-9._-]','_')
     if ($safe.Length -gt 70) { $safe = $safe.Substring(0,70) }
     $target = Join-Path $script:AgentHome "runtime-$Role-$safe-$($budget.Context)-$($budget.Output).yaml"
@@ -2316,10 +2659,23 @@ function Remove-AgentReadDirectory {
 function Resolve-AgentIntent {
     param([Parameter(Mandatory)][string]$Text)
     $t=$Text.Trim().ToLowerInvariant()
+
     if ($t -match '(release|релиз|go/no-go|готовност.+релиз)') { return 'release' }
     if ($t -match '(security|безопасност|уязвимост|vulnerab)') { return 'security' }
     if ($t -match '(performance|производительност|latency|оптимизир.+скорост)') { return 'performance' }
     if ($t -match '(bug|bugfix|ошибк|баг|почини|исправь|не\s+работает|падает|exception)') { return 'deliver-bugfix' }
+
+    # File/document mutation must win before generic analysis/question routing.
+    # Examples:
+    #   "отредактируй main.md до полноценной мастер-спеки"
+    #   "обнови README.md"
+    #   "перепиши документацию"
+    #   "дополни spec.txt"
+    if ($t -match '(редактир|отредактир|обнови|измени|перепиши|дополни|расширь|заполни|оформи|преврати).{0,80}(?:\.md\b|\.txt\b|readme\b|документ|документац|спек|spec\b|requirements\b)' -or
+        $t -match '(?:\.md\b|\.txt\b|readme\b|документ|документац|спек|spec\b|requirements\b).{0,80}(редактир|отредактир|обнови|измени|перепиши|дополни|расширь|заполни|оформи|преврати)') {
+        return 'docs'
+    }
+
     if ($t -match '(refactor|рефактор|упрост.+код|перепиш.+без\s+изменения)') { return 'refactor' }
     if ($t -match '(реализ|добав|сделай|создай|внедр|feature|implement|build|develop)') { return 'deliver-feature' }
     if ($t -match '(test|тест|coverage|покрыти)') { return 'test' }
@@ -2385,7 +2741,7 @@ function Show-AgentProductStatus {
     Write-Host "Read dirs   : $($dirs.Count)"
     $ideaConfig=Get-AgentIdeaRunConfigPath -RepositoryRoot $RepositoryRoot
     Write-Host "IDEA button : $(if(Test-Path -LiteralPath $ideaConfig){'installed'}else{'not installed'})"
-    Show-AgentLastStatus
+    Show-AgentLastStatus -RepositoryRoot $RepositoryRoot
 }
 
 
@@ -2484,15 +2840,23 @@ function Install-AgentIdeaIntegration {
     $dir=Split-Path -Parent $target
     New-Item -ItemType Directory -Force -Path $dir|Out-Null
     $xml=Get-AgentIdeaRunConfigXml -InterpreterPath (Get-AgentWindowsPowerShellPath)
+    $normalizeXml={param([string]$v) (($v -replace "`r`n","`n").Trim())}
+    $writeNeeded=$true
     if(Test-Path -LiteralPath $target){
         $current=Get-Content -LiteralPath $target -Raw
-        if($current -ne $xml -and -not $Force){
-            $backup="$target.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        if((& $normalizeXml $current) -eq (& $normalizeXml $xml)){$writeNeeded=$false}
+        elseif(-not $Force){
+            $ideaBackupDir=Join-Path $script:AgentHome 'idea-backups'
+            New-Item -ItemType Directory -Force -Path $ideaBackupDir|Out-Null
+            $backup=Join-Path $ideaBackupDir "$(Get-RepoKey $root)-$(Get-Date -Format 'yyyyMMdd-HHmmss').xml"
             Copy-Item -LiteralPath $target -Destination $backup -Force
-            Write-Host "[INFO] Previous IDEA run configuration backed up: $backup" -ForegroundColor DarkGray
+            Write-Host "[INFO] Previous IDEA run configuration backed up outside repository: $backup" -ForegroundColor DarkGray
         }
     }
-    $xml|Set-Content -LiteralPath $target -Encoding UTF8
+    foreach($legacy in @(Get-ChildItem -LiteralPath $dir -File -Filter 'Local_Coding_Agent.xml.backup-*' -ErrorAction SilentlyContinue)){
+        try{Remove-Item -LiteralPath $legacy.FullName -Force -ErrorAction Stop;Write-Host "[INFO] Removed legacy agent-generated IDEA backup: $($legacy.Name)" -ForegroundColor DarkGray}catch{}
+    }
+    if($writeNeeded){$xml|Set-Content -LiteralPath $target -Encoding UTF8}
     try{[xml](Get-Content -LiteralPath $target -Raw)|Out-Null}catch{Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue;throw "Generated IDEA run configuration is invalid XML: $($_.Exception.Message)"}
     Register-AgentIdeaProject $root
     Write-Host "[PASS] IDEA: $root" -ForegroundColor Green
@@ -2716,8 +3080,14 @@ function Show-AgentCompactHelp {
 }
 
 function Show-AgentLastStatus {
+    param([string]$RepositoryRoot=$script:AgentCurrentProjectRoot)
     $st=Get-AgentState
     if(-not $st -or -not $st.PSObject.Properties['lastEvidenceDirectory']){Write-Host 'No managed run yet.' -ForegroundColor Yellow;return}
+    $lastProject=if($st.PSObject.Properties['lastProject']){[string]$st.lastProject}else{''}
+    if($RepositoryRoot -and $lastProject -and -not (Get-NormalizedPath $RepositoryRoot).Equals((Get-NormalizedPath $lastProject),[StringComparison]::OrdinalIgnoreCase)){
+        Write-Host 'No managed run yet for this project.' -ForegroundColor Yellow
+        return
+    }
     $dir=[string]$st.lastEvidenceDirectory
     $runner=Join-Path $dir 'runner-result.txt'
     if(-not(Test-Path $runner)){Write-Host "Last evidence: $dir" -ForegroundColor DarkGray;return}
@@ -2732,8 +3102,14 @@ function Show-AgentLastStatus {
 }
 
 function Show-AgentLastResult {
+    param([string]$RepositoryRoot=$script:AgentCurrentProjectRoot)
     $st=Get-AgentState
     if(-not $st -or -not $st.PSObject.Properties['lastEvidenceDirectory']){Write-Host 'No managed run yet.' -ForegroundColor Yellow;return $false}
+    $lastProject=if($st.PSObject.Properties['lastProject']){[string]$st.lastProject}else{''}
+    if($RepositoryRoot -and $lastProject -and -not (Get-NormalizedPath $RepositoryRoot).Equals((Get-NormalizedPath $lastProject),[StringComparison]::OrdinalIgnoreCase)){
+        Write-Host 'No result yet for this project.' -ForegroundColor Yellow
+        return $false
+    }
     $dir=[string]$st.lastEvidenceDirectory
     $final=Join-Path $dir 'final-result.txt'
     if(Test-Path $final){Get-Content -LiteralPath $final;Write-Host "evidence: $dir" -ForegroundColor DarkGray;return $true}
@@ -2744,14 +3120,19 @@ function Start-AgentShell {
     [CmdletBinding()]
     param([string]$Project,[switch]$Fast,[switch]$AllowDependencies)
     $root = $null
+    $cwd=(Get-Location).Path
     if ($Project) {
-        $root = Resolve-AgentProjectRoot -StartPath $Project
+        $root = Resolve-AgentProjectRoot -StartPath $Project -AllowNonRepo
     } else {
-        try { $root = Resolve-AgentProjectRoot }
-        catch {
-            $last = Get-AgentLastProject
-            if ($last) { try { $root = Resolve-AgentProjectRoot -StartPath $last } catch { } }
-            if (-not $root) { throw $_ }
+        try {
+            $root = Resolve-AgentProjectRoot -StartPath $cwd
+        } catch {
+            if(Test-IsBlockedAgentPath $cwd){throw}
+            if(Test-IsAgentDistributionPath $cwd){throw}
+            # Never jump to a previously used repository. An explicit `agent`
+            # invocation belongs to the directory from which the user invoked it.
+            $root=Get-NormalizedPath $cwd
+            Write-Host "⚠ В текущей папке не найден Git/manifest; использую её как корень проекта: $root" -ForegroundColor Yellow
         }
     }
     Set-AgentLastProject $root
@@ -2779,6 +3160,9 @@ function Start-AgentShell {
     $leaf=Split-Path $root -Leaf
     $activeModel=if($Fast){Get-AgentRoleModel 'fast'}else{Get-AgentRoleModel 'work'}
     Write-Host ("{0} · {1} · {2} · {3} · QG✓" -f $leaf,(Get-AgentCompactModelLabel $activeModel),$script:AgentCodingMode,$script:AgentPermissionMode) -ForegroundColor Cyan
+    if(-not $root.Equals((Get-NormalizedPath $cwd),[StringComparison]::OrdinalIgnoreCase)){
+        Write-Host "root: $root" -ForegroundColor DarkGray
+    }
     while ($true) {
         $leaf = Split-Path $root -Leaf
         Write-Host '> ' -NoNewline
@@ -2792,6 +3176,16 @@ function Start-AgentShell {
             Write-Host "Последняя runtime-ошибка: $script:AgentLastShellError" -ForegroundColor Yellow
             Write-Host 'Используй /log для evidence или повтори исходную задачу после устранения причины.' -ForegroundColor DarkGray
             continue
+        }
+        if($line -match '^(?:почему\s+)?(?:не\s+)?(?:отредактировал|изменил|сделал|записал)[\s?!?.]*$'){
+            $st=Get-AgentState
+            $lastWf=if($st.PSObject.Properties['lastWorkflow']){[string]$st.lastWorkflow}else{''}
+            $lastSem=if($st.PSObject.Properties['lastSemanticStatus']){[string]$st.lastSemanticStatus}else{''}
+            if($lastWf -and $lastSem -ne 'PASS'){
+                Write-Host "Предыдущая /$lastWf не выполнила изменение проекта (статус: $lastSem)." -ForegroundColor Yellow
+                Write-Host 'Это считается ошибкой выполнения; повторный /analysis не запускаю. Используй /log full для диагностики или повтори исходную задачу после исправления runtime/model.' -ForegroundColor DarkGray
+                continue
+            }
         }
         if ($line -eq '/workflows') { agent-workflows; continue }
         if ($line -match '^/(exit|quit)$') { break }
@@ -3007,7 +3401,15 @@ function Invoke-AgentWorkflow {
     $workflowName = if($DisplayWorkflow){$DisplayWorkflow}else{$Workflow}
     $taskText = Get-AgentTaskText $Task
     $promptTaskText = $taskText
-    if($Managed -and $promptTaskText){ $promptTaskText = (Get-AgentSessionDirective -RepositoryRoot $root) + "`n`nUSER TASK:`n" + $promptTaskText }
+    if($Managed -and $promptTaskText){
+        $responseLanguage=Get-AgentLanguage $taskText
+        $languageDirective=if($responseLanguage -eq 'ru'){
+            'USER-FACING LANGUAGE: Russian. Keep mandatory machine-readable headers such as FINAL RESULT and WORKFLOW in English, but write all explanations, summary, evidence, risks and next steps in Russian.'
+        }else{
+            'USER-FACING LANGUAGE: English.'
+        }
+        $promptTaskText = (Get-AgentSessionDirective -RepositoryRoot $root) + "`n`n" + $languageDirective + "`n`nUSER TASK:`n" + $promptTaskText
+    }
     $effectiveAllowDependencies = [bool]$AllowDependencies -or ($Managed -and $script:AgentPermissionMode -in @('project','trusted'))
     $mode = if($Managed){'managed'}elseif($Headless){'headless'}elseif($Auto){'auto'}elseif($ReadOnly){'read-only'}else{'normal'}
     if (($Headless -or $Managed) -and -not $taskText) { $taskText = "Execute /$workflowName against the current repository and produce the mandatory FINAL RESULT."; $promptTaskText=$taskText }
@@ -3033,19 +3435,24 @@ function Invoke-AgentWorkflow {
     elseif ($ReadOnly) { $cnArgs += (Get-ReadOnlyPolicyArgs) }
     if ($Headless -or $Managed) {
         if (-not $ReadOnly -and -not $Auto) { $cnArgs += (Get-AgentManagedPolicyArgs -RepositoryRoot $root -AllowDependencyChanges:$effectiveAllowDependencies -Mode $script:AgentPermissionMode) }
+        $cnArgs += '--silent'
         $cnArgs += @('-p',$promptTaskText)
     } elseif ($taskText) { $cnArgs += $taskText }
     Write-Host ''
     Write-Host "▶ /$workflowName" -ForegroundColor Cyan
     $inventory=Write-AgentDeveloperDiscovery -RepositoryRoot $root -WorkflowName $workflowName -TaskText $taskText -EvidenceDirectory $evidence.evidenceDirectory
-    if(Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText){Write-Host '  → Compliance mapping: docs → implementation → tests' -ForegroundColor Cyan}
-    else{Write-Host '  → Engineering execution' -ForegroundColor Cyan}
+    $uiLanguage=Get-AgentLanguage $taskText
+    if(Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText){
+        Write-Host $(if($uiLanguage -eq 'ru'){'  → Сопоставление требований: документация → код → тесты'}else{'  → Compliance mapping: docs → implementation → tests'}) -ForegroundColor Cyan
+    }else{
+        Write-Host $(if($uiLanguage -eq 'ru'){'  → Выполнение задачи'}else{'  → Engineering execution'}) -ForegroundColor Cyan
+    }
     $code = 1; $semantic = $null
     $script:LastQualityStatus = $null
     $script:LastQualityScore = $null
     try {
         if ($Managed -or $Headless) {
-            $run = Invoke-CnCaptured -RepositoryRoot $root -Arguments $cnArgs -OutputPath (Join-Path $evidence.evidenceDirectory 'model-output.txt') -DeveloperProgress
+            $run = Invoke-CnCaptured -RepositoryRoot $root -Arguments $cnArgs -OutputPath (Join-Path $evidence.evidenceDirectory 'model-output.txt') -DeveloperProgress -Language (Get-AgentLanguage $taskText)
             $code = $run.ExitCode
             if([string]::IsNullOrWhiteSpace([string]$run.Output)){
                 @(
@@ -3053,11 +3460,11 @@ function Invoke-AgentWorkflow {
                     "ExitCode: $code",
                     'This is not semantic PASS. Automatic recovery will inspect repository state and attempt to produce the required FINAL RESULT.'
                 ) | Set-Content -Encoding UTF8 (Join-Path $evidence.evidenceDirectory 'capture-diagnostic.txt')
-                Write-Host '  ⚠ model output was empty; semantic result NOT CAPTURED — starting recovery' -ForegroundColor Yellow
+                Write-Host $(if($uiLanguage -eq 'ru'){'  ⚠ модель не вернула пригодный итоговый ответ — запускаю восстановление'}else{'  ⚠ model output was empty; semantic result NOT CAPTURED — starting recovery'}) -ForegroundColor Yellow
             }
             $semantic = Get-FinalResultStatus $run.Output
             $complianceForcedFailure=$false
-            if(Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText){
+            if(-not $run.TimedOut -and (Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText)){
                 $complianceSkillPath=Join-Path $script:SkillHome 'documentation-compliance.md'
                 if(-not(Test-AgentComplianceResult -WorkflowName $workflowName -TaskText $taskText -Text $run.Output)){
                     $complianceRecovery=Invoke-AgentComplianceRecovery -RepositoryRoot $root -Evidence $evidence -WorkflowName $workflowName -Task $taskText -PreviousOutput $run.Output -Config $config -WorkflowFile $workflowFile -ComplianceSkill $complianceSkillPath
@@ -3100,7 +3507,44 @@ function Invoke-AgentWorkflow {
                 }
             }
             $allOutput = $run.Output + "`n" + $(if(Test-Path (Join-Path $evidence.evidenceDirectory 'compliance-recovery-output.txt')){Get-Content (Join-Path $evidence.evidenceDirectory 'compliance-recovery-output.txt') -Raw}elseif(Test-Path (Join-Path $evidence.evidenceDirectory 'recovery-output.txt')){Get-Content (Join-Path $evidence.evidenceDirectory 'recovery-output.txt') -Raw}else{''})
-            Write-Host "  → Agent result: $(if($semantic){$semantic}else{'NOT CAPTURED'}) · changed: $(@(Get-AgentChangedFiles $root).Count) file(s)" -ForegroundColor DarkGray
+            $runDelta=Get-AgentRunFileDelta -Context $evidence
+            $expectsChanges=Test-WorkflowNormallyChangesCode $workflowName
+            if($expectsChanges -and @($runDelta.AgentChanged).Count -eq 0){
+                $semantic='FAIL'
+                $noChangeText=if((Get-AgentLanguage $taskText) -eq 'ru'){
+                    'Задача требовала изменения проекта, но агент не изменил ни одного файла. Такой запуск не может считаться PARTIAL или PASS.'
+                }else{
+                    'The task required project changes, but the agent changed no files. This run cannot be PARTIAL or PASS.'
+                }
+                @(
+                    'FINAL RESULT: FAIL',
+                    "WORKFLOW: $workflowName",
+                    '',
+                    'SUMMARY',
+                    $noChangeText,
+                    '',
+                    'CHANGED FILES',
+                    '- NONE',
+                    '',
+                    'VERIFICATION',
+                    '- Required repository mutation: FAIL - 0 files changed by agent',
+                    '',
+                    'ACCEPTANCE',
+                    '- Requested task: FAIL',
+                    '',
+                    'RISKS / NOT VERIFIED',
+                    '- Requested file/project changes were not performed.',
+                    '',
+                    'NEXT',
+                    $(if((Get-AgentLanguage $taskText) -eq 'ru'){'Повторите выполнение после проверки routing/model/tool permissions; задача должна реально изменить требуемые файлы.'}else{'Retry after checking routing/model/tool permissions; the requested files must actually change.'})
+                )|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $evidence.evidenceDirectory 'final-result.txt')
+                Write-Host "  ✗ $noChangeText" -ForegroundColor Red
+            }
+            if((Get-AgentLanguage $taskText) -eq 'ru'){
+                Write-Host "  → Итог агента: $(if($semantic){$semantic}else{'NOT CAPTURED'}) · изменено агентом: $(@($runDelta.AgentChanged).Count)" -ForegroundColor DarkGray
+            }else{
+                Write-Host "  → Agent result: $(if($semantic){$semantic}else{'NOT CAPTURED'}) · changed by agent: $(@($runDelta.AgentChanged).Count)" -ForegroundColor DarkGray
+            }
             if(Test-WorkflowUsesQualityEngine $workflowName){Write-Host '  → Deterministic verification' -ForegroundColor Cyan}
             $semantic = Apply-AgentQualityGate -Evidence $evidence -WorkflowName $workflowName -Task $taskText -ModelOutput $allOutput -SemanticStatus $semantic -AllowDependencyChanges:$effectiveAllowDependencies -Config $reviewConfig
         } else {

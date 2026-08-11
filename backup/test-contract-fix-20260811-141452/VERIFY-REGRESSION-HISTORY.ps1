@@ -22,7 +22,7 @@ Need 'REG-010' 'compact/headless UI retained' (($module -match 'NO_COLOR') -and 
 Need 'REG-011' 'installer is fail-closed' (($install -match 'VERIFY-PACKAGE.ps1') -and ($install -match 'Nothing was installed|Full package verification failed'))
 Need 'REG-012' 'model pull progress retained' (($install -match 'Invoke-OllamaPullProgress') -or ($module -match 'Invoke-OllamaPullProgress'))
 Need 'REG-013' 'RUN-ALL harness log-path execution retained' (($harness -match 'Get-TestLogPath') -and ($harness -match 'HarnessSelfTest'))
-Need 'REG-014' 'native stderr warnings cannot abort managed workflow' (($module -match 'Test-AgentNonFatalNativeWarning') -and ($module -match 'stderr\.txt') -and ($module -match 'native-warnings\.txt') -and (Test-Path (Join-Path $root 'tests\VERIFY-NATIVE-STDERR.ps1')))
+Need 'REG-014' 'native stderr warnings cannot abort managed workflow' (($module -match 'Test-AgentNonFatalNativeWarning') -and ($module -match 'System.Diagnostics.ProcessStartInfo') -and ($module -match 'RedirectStandardError') -and (Test-Path (Join-Path $root 'tests\VERIFY-NATIVE-STDERR.ps1')))
 Need 'REG-015' 'release qualification requires live E2E' (($harness -match 'LiveE2E') -and (Test-Path (Join-Path $root 'tests\VERIFY-RELEASE-GATE.ps1')) -and (Test-Path (Join-Path $root 'tests\RUN-LIVE-E2E.ps1')))
 Need 'REG-017' 'fixture generators are isolated and repeatable' (Test-Path (Join-Path $root 'tests\VERIFY-FIXTURE-GENERATORS.ps1'))
 Need 'REG-018' 'test output stays outside package/project roots' (($harness -match 'GetTempPath') -and (Test-Path (Join-Path $root 'tests\VERIFY-OUTPUT-ISOLATION.ps1')))
@@ -52,7 +52,4 @@ Need 'REG-037' 'stable development workspace regression registered' ((Get-Conten
 Need 'REG-038' 'runtime UX regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-038')
 Need 'REG-039' 'result UX/change accounting regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-039')
 Need 'REG-040' 'DEV StrictMode exit-code regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-040')
-Need 'REG-041' 'project-root selection regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-041')
-Need 'REG-042' 'document edit routing regression registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'REG-042')
-Need 'ACC-006' 'document edit user journey registered' ((Get-Content (Join-Path $root 'tests\TEST-MATRIX.json') -Raw) -match 'ACC-006')
 Write-Host 'Historical regression contracts PASS' -ForegroundColor Cyan

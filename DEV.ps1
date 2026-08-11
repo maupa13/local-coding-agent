@@ -9,6 +9,21 @@ $ErrorActionPreference='Stop'
 $root=Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
+
+$script:DevLastExitCode=0
+
+function Invoke-DevScript {
+  param(
+    [Parameter(Mandatory)][string]$ScriptPath,
+    [string[]]$Arguments=@()
+  )
+  $powershellExe=(Get-Command powershell.exe -ErrorAction Stop).Source
+  & $powershellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments | Out-Host
+  $script:DevLastExitCode=[int]$LASTEXITCODE
+  return $script:DevLastExitCode
+}
+
+
 function Need-Git {
   if(-not(Get-Command git -ErrorAction SilentlyContinue)){throw 'Git is required for development checkpoints.'}
   if(-not(Test-Path -LiteralPath (Join-Path $root '.git'))){
@@ -45,26 +60,32 @@ switch($Action){
     Write-Host '[PASS] Development checkpoint created.' -ForegroundColor Green
   }
   'test' {
-    & (Join-Path $root 'VERIFY-PACKAGE.ps1')
-    if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-    & (Join-Path $root 'tests\RUN-ALL.ps1') -Profile Full
-    exit $LASTEXITCODE
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'VERIFY-PACKAGE.ps1')
+    if($code -ne 0){exit $code}
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\RUN-ALL.ps1') -Arguments @('-Profile','Full')
+    exit $code
   }
   'install' {
-    & (Join-Path $root 'VERIFY-PACKAGE.ps1')
-    if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
-    & (Join-Path $root 'tests\RUN-ALL.ps1') -Profile Full
-    if($LASTEXITCODE -ne 0){
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'VERIFY-PACKAGE.ps1')
+    if($code -ne 0){exit $code}
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\RUN-ALL.ps1') -Arguments @('-Profile','Full')
+    if($code -ne 0){
       Write-Host '[BLOCKED] Install skipped because Full regression is NO-GO.' -ForegroundColor Red
-      exit $LASTEXITCODE
+      exit $code
     }
-    & (Join-Path $root 'INSTALL.ps1')
-    exit $LASTEXITCODE
+    Write-Host '[gate] Real Continue tool smoke: cn must actually edit a temporary main.md...' -ForegroundColor Cyan
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'tests\RUN-CONTINUE-TOOL-SMOKE.ps1')
+    if($code -ne 0){
+      Write-Host '[BLOCKED] Install skipped because Continue/model tool execution is not operational.' -ForegroundColor Red
+      exit $code
+    }
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'INSTALL.ps1')
+    exit $code
   }
   'qualify' {
     if([string]::IsNullOrWhiteSpace($RealProject)){throw 'qualify requires -RealProject <path>'}
-    & (Join-Path $root 'QUALIFY-RELEASE.ps1') -RealProject $RealProject
-    exit $LASTEXITCODE
+    $code=Invoke-DevScript -ScriptPath (Join-Path $root 'QUALIFY-RELEASE.ps1') -Arguments @('-RealProject',$RealProject)
+    exit $code
   }
   'restore' {
     Need-Git

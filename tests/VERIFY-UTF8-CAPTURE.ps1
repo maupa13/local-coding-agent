@@ -8,8 +8,8 @@ foreach($needle in @(
   'System.Text.UTF8Encoding',
   'Console]::OutputEncoding',
   'PYTHONIOENCODING',
-  'StandardOutputEncoding',
-  'StandardErrorEncoding'
+  'stdout.txt',
+  'stderr.txt'
 )){
   if($module -notmatch [regex]::Escape($needle)){throw "[FAIL] UTF-8 capture contract missing: $needle"}
   Write-Host "[PASS] UTF-8 capture: $needle" -ForegroundColor Green

@@ -328,6 +328,76 @@
       "description": "Development source remains in one stable folder; Git/history replaces per-RC directory versioning until release qualification passes",
       "test": "tests/VERIFY-DEV-WORKSPACE.ps1",
       "tier": "regression"
+    },
+    {
+      "id": "REG-038",
+      "area": "runtime-ux",
+      "description": "Managed/headless runs show heartbeat, live activity, stall warning, visible cancellation guidance and a hard timeout instead of an unbounded silent Engineering execution state",
+      "test": "tests/VERIFY-UX-RUNTIME.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-039",
+      "area": "result-ux",
+      "description": "User-facing output follows request language, separates pre-existing Git changes from files changed during the run, and treats an incomplete read-only analysis as FAIL rather than pseudo-PARTIAL",
+      "test": "tests/VERIFY-RUN-CHANGE-ACCOUNTING.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-040",
+      "area": "development-workspace",
+      "description": "DEV.ps1 must not read an unset LASTEXITCODE after direct PowerShell script invocation under StrictMode; child scripts run in isolated powershell.exe processes with explicit native exit codes",
+      "test": "tests/VERIFY-DEV-STRICTMODE-EXITCODE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-041",
+      "area": "multi-project",
+      "description": "Invoking agent from a project directory must never silently fall back to lastProject; unmarked current directories are used explicitly as project roots, and /status /result are scoped to the active project",
+      "test": "tests/VERIFY-PROJECT-ROOT-SELECTION.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-042",
+      "area": "routing-docs",
+      "description": "Root-level Markdown/text/spec files are documentation; explicit edit/update/rewrite document intent routes to mutating /docs before /analysis; mutating workflows with zero changed files fail closed",
+      "test": "tests/VERIFY-DOC-EDIT-ROUTING.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-043",
+      "area": "non-git-inventory",
+      "description": "Repository inventory must handle a plain non-git folder containing root main.md without invoking failing git commands; root main.md remains documentation",
+      "test": "tests/VERIFY-NON-GIT-INVENTORY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-044",
+      "area": "repository-inventory",
+      "description": "Repository source/docs inventory is filesystem-first and independent of Git state; root main.md and ordinary source files are discovered in plain folders and new repositories",
+      "test": "tests/VERIFY-FILESYSTEM-FIRST-INVENTORY.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-045",
+      "area": "powershell-5.1",
+      "description": "Filesystem inventory path trimming must use a single backslash character; the previous two-character '\\\\' cast to [char] must never return",
+      "test": "tests/VERIFY-PS51-PATH-CHARS.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-046",
+      "area": "model-tool-integration",
+      "description": "Managed Qwen runtime disables reasoning to avoid tool calls disappearing into thinking, and DEV install must pass a real cn headless file-edit smoke before installing",
+      "test": "tests/VERIFY-MODEL-TOOL-GATE.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-047",
+      "area": "continue-config",
+      "description": "Managed Continue YAML uses only documented schema fields: reasoning false under defaultCompletionOptions; no unsupported top-level experimental block; real smoke prints stdout/stderr/config on failure",
+      "test": "tests/VERIFY-MODEL-TOOL-GATE.ps1",
+      "tier": "regression"
     }
   ]
 }

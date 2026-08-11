@@ -158,6 +158,31 @@
       "id": "SCN-022",
       "name": "Iterative development in one stable source directory",
       "expected": "changes are applied in-place under local-coding-agent; Git provides history/rollback; release version changes only after qualification passes"
+    },
+    {
+      "id": "SCN-023",
+      "name": "Long local-model execution produces no immediate final answer",
+      "expected": "normal UI emits heartbeat every 10 seconds, surfaces recognized tool/file activity, warns after 60 seconds without new output, shows Ctrl+C cancellation, and stops the process tree after the hard timeout"
+    },
+    {
+      "id": "SCN-024",
+      "name": "Russian read-only analysis starts with seven pre-existing Git changes and model final result is missing",
+      "expected": "UI remains Russian, reports changed-by-agent separately from seven pre-existing changes, does not show Developer report, and marks the analysis FAIL instead of presenting a provisional pseudo-result"
+    },
+    {
+      "id": "SCN-025",
+      "name": "DEV install after VERIFY-PACKAGE PASS under Set-StrictMode",
+      "expected": "DEV continues into Full regression and install without VariableIsUndefined for LASTEXITCODE"
+    },
+    {
+      "id": "SCN-026",
+      "name": "Run agent from a new/unmarked project after previously using help-pass",
+      "expected": "banner/root/evidence use the current directory; agent never silently analyzes help-pass, and /status does not show help-pass history as current-project status"
+    },
+    {
+      "id": "SCN-027",
+      "name": "Repository contains only root main.md and user says 'отредактируй main.md до статуса полноценной мастер спеки'",
+      "expected": "discovery reports main.md as documentation; router selects mutating /docs; the run cannot report PARTIAL/PASS unless main.md or another requested project file is actually changed"
     }
   ]
 }

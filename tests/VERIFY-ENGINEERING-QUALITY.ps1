@@ -9,9 +9,9 @@ $required=@(
  'function Write-AgentProgressFromLine',
  'function Get-AgentWorkingTreeFingerprint',
  'function Write-AgentStructuredResult',
- 'Developer report',
+ 'function Get-AgentRunFileDelta',
  'function Test-AgentComplianceTask',
- 'Compliance mapping: docs',
+ 'Сопоставление требований: документация',
  '-DeveloperProgress',
  'verification commands changed the working tree',
  'rerunning checks once'

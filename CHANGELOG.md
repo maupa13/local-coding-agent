@@ -1,5 +1,16 @@
 # Local Coding Agent 1.0.0-dev
 
+## Usability/runtime completion pass
+- Managed/headless Continue execution now uses explicit headless stdout mode (`--silent`) and no longer forces the local run into CI mode.
+- Runtime output is redirected to per-run files and polled while the task runs, so recognized file/tool activity is visible before completion.
+- Normal mode emits a heartbeat every 10 seconds, warns after 60 seconds without new output, shows the child PID/model and `Ctrl+C` cancellation guidance, and enforces a 10-minute hard timeout that terminates the process tree.
+- Russian requests explicitly instruct the model/recovery path to answer in Russian while preserving mandatory machine-readable `FINAL RESULT` / `WORKFLOW` headers.
+- Normal UI no longer exposes the `Developer report` label; machine-readable evidence remains in the evidence directory.
+- Git changes are now split into `changed by agent` versus `pre-existing changes` using per-run file hashes.
+- Read-only analysis with no valid semantic model result is `FAIL`, not a provisional pseudo-`PARTIAL`.
+- Added REG-038/REG-039 and SCN-023/SCN-024 for heartbeat/stall/timeout/language/change-accounting UX.
+
+
 ## Development workflow reset
 - Versioned development directories are discontinued.
 - Canonical source workspace is now `C:\AI\local-coding-agent`.

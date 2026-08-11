@@ -2,21 +2,19 @@
 
 **BUILD-SANDBOX VERDICT: PASS**
 
-Development policy:
-- One canonical source directory: `C:\AI\local-coding-agent`.
-- Git checkpoints provide history and rollback.
-- VERSION remains `1.0.0-dev` until the real Windows qualification reaches 7/7 PASS.
+Key runtime/UX contracts:
+- DEV StrictMode-safe child PowerShell runner: PASS
+- No direct `.ps1` + possibly-unset `$LASTEXITCODE` path in DEV test/install/qualify: PASS
+- Heartbeat/live progress/stall warning/hard timeout: PASS
+- Russian request language propagation: PASS
+- Changed-by-agent vs pre-existing changes: PASS
+- Missing semantic result on read-only analysis -> FAIL: PASS
 
-Current checks:
-- Core functions: 173
-- PowerShell files: 61
-- Test contracts: 44
-- Developer scenarios: 22
-- Compliance extractor Generic.List usage: NONE
-- Compliance extractor manual Object[] construction: NONE
-- Compliance extractor/helper plain PowerShell array boundary: PASS
-- Behavioral compliance validator: PASS
-- Stable dev workspace: PASS
+Regression state:
+- Core functions: 177
+- PowerShell files: 64
+- Test contracts: 47
+- Developer scenarios: 25
 - Sandbox qualification: PASS
 
-Target Windows PowerShell 5.1 remains authoritative for runtime execution.
+Windows PowerShell 5.1 remains authoritative for actual installation and Continue/Ollama runtime.

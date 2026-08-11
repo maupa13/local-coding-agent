@@ -66,8 +66,9 @@ def test_module_contracts():
         "function Write-DeterministicComplianceFinalResult",
         "function Write-DeterministicWorkflowFinalResult",
         "wrapperCanPromote",
-        "StandardOutputEncoding",
-        "StandardErrorEncoding",
+        "stdout.txt",
+        "stderr.txt",
+        "WaitForExit(1000)",
         "PYTHONIOENCODING='utf-8'",
     ]
     for n in needles: require(n in m,f"missing {n}")
@@ -421,6 +422,116 @@ def test_extractor_generic_list_free():
     require("return @(" not in helper,"helper still wraps extractor in array-subexpression")
     return "compliance extractor/helper use plain PowerShell arrays only"
 
+
+def test_runtime_ux_contract():
+    m=read("powershell/LocalCodingAgent.psm1")
+    checks=[
+        ("function Get-AgentLanguage" in m, "language detector missing"),
+        ("USER-FACING LANGUAGE: Russian" in m, "Russian response directive missing"),
+        ("$HeartbeatSeconds=10" in m, "heartbeat default missing"),
+        ("$StallWarningSeconds=60" in m, "stall warning default missing"),
+        ("$MaxRuntimeSeconds=600" in m, "hard timeout missing"),
+        ("taskkill.exe /PID $process.Id /T /F" in m, "process-tree cancellation missing"),
+        ("Write-AgentProgressFromLine -Line $liveLine" in m, "live activity rendering missing"),
+        ("изменено агентом:" in m and "было изменено до запуска:" in m, "per-run change accounting UX missing"),
+        ("Developer report" not in m, "developer-only label still exposed"),
+        ("elseif(-not $normallyChanges){'FAIL'}" in m, "read-only no-result state is not fail-closed"),
+        ("$cnArgs += '--silent'" in m, "managed headless output mode missing"),
+    ]
+    for cond,msg in checks: require(cond,msg)
+    return "heartbeat + stall timeout + Russian UX + per-run change accounting"
+
+
+def test_dev_strictmode_exitcode():
+    dev=read("DEV.ps1")
+    checks=[
+        ("function Invoke-DevScript" in dev, "DEV child-script runner missing"),
+        ("$script:DevLastExitCode=0" in dev, "DEV exit state not initialized"),
+        ("& $powershellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @Arguments | Out-Host" in dev, "DEV does not isolate child PowerShell scripts"),
+        ("$script:DevLastExitCode=[int]$LASTEXITCODE" in dev, "native child exit code not captured"),
+        ("& (Join-Path $root 'VERIFY-PACKAGE.ps1')" not in dev, "DEV still directly invokes VERIFY-PACKAGE.ps1"),
+    ]
+    for cond,msg in checks: require(cond,msg)
+    return "DEV StrictMode-safe child-script exit handling present"
+
+
+def test_windows_regression_contract_hygiene():
+    hist=read("tests/VERIFY-REGRESSION-HISTORY.ps1")
+    devtest=read("tests/VERIFY-DEV-STRICTMODE-EXITCODE.ps1")
+    accounting=read("tests/VERIFY-RUN-CHANGE-ACCOUNTING.ps1")
+    native=read("tests/VERIFY-NATIVE-STDERR.ps1")
+    require("RedirectStandardError" not in hist, "historical regression still requires removed RedirectStandardError architecture")
+    require("$dev -match \"& \\(Join-Path \\$root" not in devtest, "DEV verifier contains interpolating double-quoted regex")
+    require('$m -notmatch "elseif\\(-not \\$normallyChanges' not in accounting, "change-accounting verifier contains interpolating double-quoted regex")
+    require("stderr.txt" in native and "native-warnings.txt" in native and "native-stderr.txt" in native, "native stderr verifier does not match file-capture architecture")
+    return "Windows regressions no longer self-fail on stale architecture or StrictMode interpolation"
+
+
+def test_project_root_selection():
+    m=read("powershell/LocalCodingAgent.psm1")
+    require("Never jump to a previously used repository" in m, "current-directory project policy missing")
+    require("$root=Get-NormalizedPath $cwd" in m, "unmarked current directory is not used as project root")
+    require("No managed run yet for this project." in m, "status is not project-scoped")
+    require("No result yet for this project." in m, "result is not project-scoped")
+    require("Get-AgentLastProject\n" not in m[m.find("function Start-AgentShell"):m.find("function Invoke-ContinueAgent")], "Start-AgentShell still falls back to last project")
+    require("· changed: $(@(Get-AgentChangedFiles $root).Count) file(s)" not in m, "legacy changed-count summary is still misleading")
+    return "current directory wins; no cross-project fallback/status leakage; per-run changed count"
+
+
+def test_doc_edit_user_journey():
+    m=read("powershell/LocalCodingAgent.psm1")
+    require("$docExt=@('.md','.markdown','.mdown','.txt','.rst','.adoc','.yaml','.yml','.json')" in m, "root docs extension discovery missing")
+    edit_branch=m.find("return 'docs'")
+    analysis_after=m.find("return 'analysis'", edit_branch)
+    require(edit_branch >= 0 and analysis_after > edit_branch, "document edit route does not precede analysis fallback")
+    require("'docs','migration'" in m, "docs workflow is not marked mutating")
+    require("Задача требовала изменения проекта, но агент не изменил ни одного файла" in m, "zero-change mutating workflow is not fail-closed")
+    return "root main.md docs + edit->docs + zero-change FAIL"
+
+
+def test_non_git_inventory_contract():
+    m=read("powershell/LocalCodingAgent.psm1")
+    t=read("tests/VERIFY-DOC-EDIT-ROUTING.ps1")
+    require("function Test-AgentGitMarker" in m, "filesystem git-marker guard missing")
+    require("if (-not (Test-AgentGitMarker $RepositoryRoot)) { return $snapshot }" in m, "Get-GitSnapshot still calls git for non-git folders")
+    require("rev-parse --verify HEAD" in m, "unborn repository HEAD guard missing")
+    require('"$docExt=@(' not in t, "DOC-EDIT-ROUTING still interpolates $docExt under StrictMode")
+    return "non-git inventory + unborn HEAD + StrictMode-safe doc routing verifier"
+
+
+def test_filesystem_first_inventory_contract():
+    m=read("powershell/LocalCodingAgent.psm1")
+    require("Inventory is filesystem-first by design" in m, "filesystem-first inventory marker missing")
+    require("Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File -Force" in m, "inventory is not filesystem-driven")
+    inv=m[m.find("function Get-AgentRepositoryInventory"):m.find("function Write-AgentDeveloperDiscovery")]
+    require("git -C $RepositoryRoot ls-files" not in inv, "inventory still depends on git ls-files")
+    require("$docExt=@('.md','.markdown','.mdown','.txt','.rst','.adoc','.yaml','.yml','.json')" in inv, "root document extensions missing")
+    return "filesystem-first docs/source inventory independent of git state"
+
+
+def test_ps51_path_chars():
+    m=read("powershell/LocalCodingAgent.psm1")
+    require("TrimStart([char]'\\',[char]'/')" in m, "PS5.1-safe inventory TrimStart char overload missing")
+    line=[ln for ln in m.splitlines() if "FullName.Substring($RepositoryRoot.Length).TrimStart" in ln][-1]
+    seg=line.split("TrimStart",1)[1]
+    require(seg.count("\\") == 1, f"inventory TrimStart must contain exactly one backslash char, got {seg.count(chr(92))}")
+    return "single backslash char in PS5.1 inventory TrimStart"
+
+
+def test_model_tool_gate_contract():
+    cfg=read("config/config-agent.yaml")
+    mod=read("powershell/LocalCodingAgent.psm1")
+    dev=read("DEV.ps1")
+    smoke=read("tests/RUN-CONTINUE-TOOL-SMOKE.ps1")
+    require("reasoning: false" in cfg, "managed agent reasoning is not disabled")
+    require("\nexperimental:" not in cfg, "unsupported top-level experimental YAML present")
+    require("reasoning: false" in mod, "runtime config generator does not preserve reasoning false")
+    require("RUN-CONTINUE-TOOL-SMOKE.ps1" in dev, "DEV install lacks real Continue tool smoke")
+    require("'--allow','Edit'" in smoke and "'--allow','MultiEdit'" in smoke and "'--allow','Write'" in smoke, "tool smoke lacks explicit write permissions")
+    require("DID NOT EDIT main.md" in smoke, "tool smoke is not fail-closed on exit-0/no-edit")
+    require("--- stdout ---" in smoke and "--- stderr ---" in smoke and "effective config head" in smoke, "full smoke diagnostics missing")
+    return "supported reasoning-off config + real cn edit gate + full smoke diagnostics"
+
 def wrapper_state(exit_code, compliance=False, req_count=0, changed=0, checks=None, review=None, violations=0):
     checks=checks or []
     if exit_code!=0: return "FAIL"
@@ -468,6 +579,15 @@ for name,fn in [
     ("rc.14 matrix-before-final accepted",test_rc14_matrix_before_final_and_runstep_contract),
     ("variable-colon/stable dev workspace",test_variable_colon_and_folder_identity),
     ("extractor generic-list free",test_extractor_generic_list_free),
+    ("runtime UX contract",test_runtime_ux_contract),
+    ("DEV StrictMode exit code",test_dev_strictmode_exitcode),
+    ("Windows regression contract hygiene",test_windows_regression_contract_hygiene),
+    ("project root selection",test_project_root_selection),
+    ("document edit user journey",test_doc_edit_user_journey),
+    ("non-git inventory contract",test_non_git_inventory_contract),
+    ("filesystem-first inventory",test_filesystem_first_inventory_contract),
+    ("PS5.1 path chars",test_ps51_path_chars),
+    ("model tool gate",test_model_tool_gate_contract),
     ("StrictMode verifier hygiene",test_strictmode_verifier_hygiene),
     ("wrapper state machine",test_state_machine),
     ("UTF-8 text hygiene",test_no_mojibake_literals),
