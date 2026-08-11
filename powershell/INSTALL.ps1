@@ -112,9 +112,9 @@ function Has-Model([string]$Name) {
     }
     return $false
 }
-$primary = 'qwen3.5:9b-q4_K_M'
+$primary = 'qwen3:8b'
 if($InstallRecommendedModels){
-    foreach($model in @($primary,'qwen3.5:4b')){
+    foreach($model in @($primary)){
         if(Has-Model $model){Write-Host "[PASS] $model already installed" -ForegroundColor Green;continue}
         Write-Host "Installing $model through Ollama API..." -ForegroundColor Cyan
         Invoke-OllamaPullProgress $model
@@ -171,6 +171,7 @@ New-Item -ItemType Directory -Force -Path $AgentHome,(Join-Path $AgentHome 'work
 Copy-Item (Join-Path $PackageRoot 'workflows\*.md') (Join-Path $AgentHome 'workflows') -Force
 Copy-Item (Join-Path $PackageRoot 'skills\*.md') (Join-Path $AgentHome 'skills') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\LocalCodingAgent.psm1') (Join-Path $AgentHome 'LocalCodingAgent.psm1') -Force
+Copy-Item (Join-Path $PackageRoot 'powershell\OllamaAgentLoop.ps1') (Join-Path $AgentHome 'OllamaAgentLoop.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'integrations\IDEA-LAUNCH.ps1') (Join-Path $AgentHome 'IDEA-LAUNCH.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'UNINSTALL.ps1') (Join-Path $AgentHome 'UNINSTALL.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'workflows\catalog.json') (Join-Path $AgentHome 'catalog.json') -Force
@@ -249,7 +250,7 @@ Write-Host '  4. /deliver <goal + docs\spec.md>'
 Write-Host ''
 Write-Host 'Managed mode guarantees:'
 Write-Host '  - one repository per workflow run'
-Write-Host '  - one workflow per fresh Continue process'
+Write-Host '  - native Ollama tool loop with visible actions, exact tokens and persisted transcript'
 Write-Host '  - FINAL RESULT validation + automatic recovery'
 Write-Host '  - dependency firewall + command anchoring by default'
 Write-Host '  - project-first coding permissions (broad project coding; destructive/system classes excluded)'

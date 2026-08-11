@@ -14,6 +14,10 @@ try{
   if($route -ne 'docs'){throw "[FAIL] expected docs route, got '$route'"}
   Write-Host '[PASS] user phrase routes to docs' -ForegroundColor Green
 
+  $improveRoute=& $m { Resolve-AgentModeIntent 'улучши документацию' }
+  if($improveRoute -ne 'docs'){throw "[FAIL] expected improve-docs route, got '$improveRoute'"}
+  Write-Host '[PASS] improve documentation routes to docs' -ForegroundColor Green
+
   $tmp=Join-Path ([IO.Path]::GetTempPath()) ('lca-doc-journey-'+[guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $tmp|Out-Null
   Set-Content -LiteralPath (Join-Path $tmp 'main.md') -Encoding UTF8 -Value '# Идея'

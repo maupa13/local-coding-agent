@@ -2,10 +2,10 @@
 version: 1.0.0-dev.2
 schema: v1
 models:
-- name: Local Agent (qwen3.5:9b-q4_K_M)
+- name: Local Agent (qwen3:8b)
   provider: ollama
   apiBase: http://127.0.0.1:11434
-  model: qwen3.5:9b-q4_K_M
+  model: qwen3:8b
   roles:
   - chat
   - edit

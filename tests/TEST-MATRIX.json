@@ -407,6 +407,13 @@
       "tier": "regression"
     },
     {
+      "id": "REG-050",
+      "area": "native-agent-runtime",
+      "description": "Native Ollama runtime enforces repository boundaries and read-only mode, executes explicit tools, preserves a transcript, and reports exact prompt/output token counts",
+      "test": "tests/VERIFY-NATIVE-OLLAMA-LOOP.ps1",
+      "tier": "regression"
+    },
+    {
       "id": "REG-049",
       "area": "agentic-orchestration",
       "description": "Team mode uses separate planner, implementer, deterministic tester, and reviewer stages; stops on blocking phases; and resumes with explicit user clarification",

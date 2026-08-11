@@ -12,7 +12,7 @@ function Need([string]$Pattern,[string]$Name){
 
 Need 'function Get-AgentLanguage' 'request-language detection'
 Need 'USER-FACING LANGUAGE: Russian' 'Russian response directive'
-Need '\$HeartbeatSeconds=10' 'runtime heartbeat cadence'
+Need '\$HeartbeatSeconds=5' 'runtime heartbeat cadence'
 Need '\$StallWarningSeconds=60' 'stall warning threshold'
 Need '\$MaxRuntimeSeconds=600' 'hard runtime timeout'
 Need 'taskkill\.exe /PID \$process\.Id /T /F' 'cancel/timeout kills process tree'
@@ -20,6 +20,8 @@ Need 'Ctrl\+C' 'visible cancellation hint'
 Need 'Get-Content -LiteralPath \$stdoutPath' 'live stdout-file polling'
 Need 'Write-AgentProgressFromLine -Line \$liveLine' 'live activity rendering'
 Need '\$cnArgs \+= ''--silent''' 'managed Continue headless output mode'
+Need 'Native Ollama agent loop' 'native managed runtime visibility'
+Need 'tokens total:' 'exact native token summary'
 Need 'изменено агентом:' 'Russian per-run changed-file summary'
 Need 'было изменено до запуска:' 'pre-existing changes separated'
 if($m -match "Write-Host '  Developer report'"){throw '[FAIL] raw Developer report label still exposed by default'}

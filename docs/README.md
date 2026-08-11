@@ -16,7 +16,7 @@ It verifies package integrity, the Full regression suite, installs exactly this 
 `VERIFY-PACKAGE.ps1` intentionally validates package/static correctness only; runtime behavior belongs to Quick/Full/Startup/E2E gates so a harness-specific integration probe cannot prevent a syntactically valid candidate from being installed and exercised.
 
 
-Release candidate for the first public stable line. Local-first coding agent for Windows/IntelliJ IDEA built around Continue CLI + Ollama, with managed permissions, engineering workflows, evidence, deterministic quality gates, and regression/release qualification.
+Release candidate for the first public stable line. Local-first coding agent for Windows/IntelliJ IDEA with a native Ollama agent loop, managed permissions, engineering workflows, evidence, deterministic quality gates, and regression/release qualification. Continue CLI remains available for the raw TUI and compatibility review paths, but normal managed implementation no longer depends on headless `cn` output.
 
 Полное руководство по подготовке проекта, ежедневным workflow, моделям, permissions и диагностике: [USER-GUIDE.md](USER-GUIDE.md).
 
@@ -48,6 +48,12 @@ Default session is `code + project` permissions: broad coding access inside the 
 Useful controls: `/mode`, `/effort`, `/budget`, `/model`, `/permissions`, `/settings`, `/memory`, `/status`, `/result`, `/review`, `/release`.
 
 Plain text is auto-routed.
+
+### Native managed runtime
+
+Normal managed workflows use the Ollama `/api/chat` tool loop directly. During a run the terminal shows every agent turn, tool name, first-line tool result, and exact Ollama prompt/output token counts. The loop persists `native-agent-transcript.json` and `native-usage.json` in the run evidence directory and carries the previous transcript into `/continue`.
+
+The native tools are intentionally small: repository file listing, line-numbered reads, literal search, full-file writes, exact single replacements, and an allowlisted build/test/Git-status shell. Read-only workflows cannot write. Paths outside the repository and destructive commands are rejected before execution; dependency files still require the existing dependency opt-in policy.
 
 ## Release qualification
 

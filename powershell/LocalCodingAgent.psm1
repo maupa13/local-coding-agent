@@ -28,9 +28,12 @@ $script:AgentBudgetProfile = 'balanced'
 $script:AgentWorkModel = $null
 $script:AgentFastModel = $null
 $script:AgentReviewModel = $null
+$script:QualifiedToolModels = @{}
 $script:AgentReadDirs = @()
 $script:AgentRuntimeVersionPath = Join-Path $script:AgentHome 'VERSION'
 $script:AgentModulePath = $PSCommandPath
+$script:NativeLoopPath = Join-Path (Split-Path -Parent $PSCommandPath) 'OllamaAgentLoop.ps1'
+if(Test-Path -LiteralPath $script:NativeLoopPath){. $script:NativeLoopPath}
 $script:DependencySensitiveNames = @(
     'Cargo.toml','Cargo.lock','package.json','package-lock.json','pnpm-lock.yaml','yarn.lock',
     'pom.xml','build.gradle','build.gradle.kts','libs.versions.toml',
@@ -1139,7 +1142,7 @@ function Invoke-CnCaptured {
         [switch]$ShowLiveOutput,
         [switch]$DeveloperProgress,
         [ValidateSet('ru','en')][string]$Language='en',
-        [int]$HeartbeatSeconds=10,
+        [int]$HeartbeatSeconds=5,
         [int]$StallWarningSeconds=60,
         [int]$MaxRuntimeSeconds=600
     )
@@ -1154,6 +1157,14 @@ function Invoke-CnCaptured {
     $configPath=$null
     for($i=0;$i -lt $Arguments.Count-1;$i++){if($Arguments[$i] -eq '--config'){$configPath=$Arguments[$i+1];break}}
     $modelLabel=Get-AgentModelLabelFromConfig $configPath
+    $promptChars=0
+    for($i=0;$i -lt $Arguments.Count;$i++){
+        $arg=[string]$Arguments[$i]
+        if($i -gt 0 -and $Arguments[$i-1] -eq '--rule' -and (Test-Path -LiteralPath $arg -PathType Leaf)){
+            try{$promptChars+=(Get-Item -LiteralPath $arg).Length}catch{}
+        }elseif($Arguments[$i-1] -in @('-p','--print','--prompt') -or $i -eq ($Arguments.Count-1)){$promptChars+=$arg.Length}
+    }
+    $estimatedInputTokens=[math]::Ceiling($promptChars/4.0)
 
     $oldNoColor=$env:NO_COLOR;$oldTerm=$env:TERM;$oldCi=$env:CI;$oldForceColor=$env:FORCE_COLOR
     $env:NO_COLOR='1';$env:TERM='dumb';$env:FORCE_COLOR='0'
@@ -1207,11 +1218,20 @@ exit [int]$code
         $childPid=$process.Id
         if($Language -eq 'ru'){
             Write-Host "    ● модель: $modelLabel · PID $childPid" -ForegroundColor DarkGray
-            Write-Host "      работа началась; Ctrl+C — отменить" -ForegroundColor DarkGray
+            Write-Host "      контекст: ≈$estimatedInputTokens токенов · работа началась; Ctrl+C — отменить" -ForegroundColor DarkGray
         }else{
             Write-Host "    ● model: $modelLabel · PID $childPid" -ForegroundColor DarkGray
-            Write-Host "      running; Ctrl+C to cancel" -ForegroundColor DarkGray
+            Write-Host "      context: ≈$estimatedInputTokens tokens · running; Ctrl+C to cancel" -ForegroundColor DarkGray
         }
+
+        $modelLoaded=$false
+        try{
+            $loaded=@((Invoke-RestMethod 'http://127.0.0.1:11434/api/ps' -TimeoutSec 2).models|Where-Object{$_.name -eq $modelLabel})
+            if($loaded.Count){$modelLoaded=$true;$vram=[math]::Round(([double]$loaded[0].size_vram/1GB),1);Write-Host "      Ollama: загружена · VRAM ${vram} GB · context $($loaded[0].context_length)" -ForegroundColor DarkGray}
+            else{Write-Host '      Ollama: загрузка модели…' -ForegroundColor DarkGray}
+        }catch{}
+        $liveStatus=@((Get-GitSnapshot $RepositoryRoot).status)
+        $nextRepositoryPoll=(Get-Date).AddSeconds(2)
 
         while(-not $process.WaitForExit(1000)){
             $now=Get-Date
@@ -1241,6 +1261,15 @@ exit [int]$code
                 break
             }
 
+            if($now -ge $nextRepositoryPoll){
+                $newStatus=@((Get-GitSnapshot $RepositoryRoot).status)
+                foreach($change in @($newStatus|Where-Object{$liveStatus -notcontains $_})){
+                    if(-not[string]::IsNullOrWhiteSpace($change)){Write-Host "      ✎ файл: $change" -ForegroundColor Cyan}
+                }
+                $liveStatus=$newStatus
+                $nextRepositoryPoll=$now.AddSeconds(2)
+            }
+
             if($now -ge $nextHeartbeat){
                 $quiet=[int]($now-$lastActivity).TotalSeconds
                 $elapsedText='{0:mm\:ss}' -f ($now-$started)
@@ -1258,6 +1287,9 @@ exit [int]$code
                     }
                 }
                 $nextHeartbeat=$now.AddSeconds([math]::Max(2,$HeartbeatSeconds))
+                if(-not $modelLoaded){
+                    try{$active=@((Invoke-RestMethod 'http://127.0.0.1:11434/api/ps' -TimeoutSec 2).models|Where-Object{$_.name -eq $modelLabel});if($active.Count){$modelLoaded=$true;Write-Host '      ✓ модель загружена в Ollama' -ForegroundColor DarkGray}}catch{}
+                }
             }
         }
 
@@ -1337,6 +1369,10 @@ exit [int]$code
         if($nativeErrors.Count){
             @($nativeErrors)|Set-Content -Encoding UTF8 -LiteralPath (Join-Path $outputDirectory 'native-stderr.txt')
         }
+
+        $estimatedOutputTokens=[math]::Ceiling((($lines -join "`n").Length)/4.0)
+        if($Language -eq 'ru'){Write-Host "      вывод: ≈$estimatedOutputTokens токенов · время $([int]((Get-Date)-$started).TotalSeconds)с" -ForegroundColor DarkGray}
+        else{Write-Host "      output: ≈$estimatedOutputTokens tokens · elapsed $([int]((Get-Date)-$started).TotalSeconds)s" -ForegroundColor DarkGray}
 
         return [pscustomobject]@{
             ExitCode=[int]$exitCode
@@ -2015,7 +2051,14 @@ SUMMARY: <one concise paragraph>
     $args=@('--config',$Config)+(Get-ReadOnlyPolicyArgs)+@('-p',$prompt)
     $path=Join-Path $Evidence.evidenceDirectory 'quality-review.txt'
     Write-Host '  • Independent review...' -ForegroundColor Cyan
-    $run=Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath $path
+    if((Get-AgentPreference 'managedRuntime' 'native') -eq 'native' -and (Get-Command Invoke-NativeOllamaAgentLoop -ErrorAction SilentlyContinue)){
+        $reviewSystem='You are an independent read-only code reviewer. Inspect the actual repository diff with tools. Focus on correctness, regressions, security, and missing tests. Never modify files. Finish with TASK_COMPLETE followed by REVIEW RESULT: PASS, WARN, or FAIL; BLOCKER: count; HIGH: count; SUMMARY: concise evidence.'
+        $nativeReview=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model (Get-AgentRoleModel 'review') -SystemPrompt $reviewSystem -Task $prompt -ReadOnly -MaxTurns 12 -TranscriptPath (Join-Path $Evidence.evidenceDirectory 'quality-review-transcript.json')
+        $reviewOutput=[string]$nativeReview.FinalOutput
+        if([string]::IsNullOrWhiteSpace($reviewOutput)){$last=@($nativeReview.Transcript|Where-Object{$_.Role -eq 'assistant'}|Select-Object -Last 1);if($last.Count){$reviewOutput=[string]$last[0].Content}}
+        $reviewOutput|Set-Content -LiteralPath $path -Encoding UTF8
+        $run=[pscustomobject]@{ExitCode=0;Output=$reviewOutput}
+    }else{$run=Invoke-CnCaptured -RepositoryRoot $RepositoryRoot -Arguments $args -OutputPath $path}
     $m=[regex]::Match($run.Output,'(?im)^\s*REVIEW RESULT:\s*(PASS|WARN|FAIL)\s*$')
     $status=if($m.Success){$m.Groups[1].Value.ToUpperInvariant()}elseif($run.ExitCode -ne 0){'FAIL'}else{'WARN'}
     Write-Host "    $status" -ForegroundColor $(if($status -eq 'PASS'){'Green'}elseif($status -eq 'WARN'){'Yellow'}else{'Red'})
@@ -2037,6 +2080,7 @@ function Get-DiffQualitySignals {
         if($inside -eq 'true'){
             $diff=(Invoke-AgentGitLines -RepositoryRoot $RepositoryRoot -Arguments @('diff','HEAD','--no-ext-diff','--unified=0')|Out-String)
         }
+
     }
     $diffPath=Join-Path $EvidenceDirectory 'quality-diff.txt'
     $diff | Set-Content -Encoding UTF8 $diffPath
@@ -2437,7 +2481,7 @@ function Install-AgentOllamaModel {
 
 function Show-AgentRecommendedModels {
     Write-Host 'Recommended local roles' -ForegroundColor Cyan
-    Write-Host '  work   qwen3.5:9b-q4_K_M   quality / tools'
+    Write-Host '  work   qwen3:8b             stronger coding / tool loop'
     Write-Host '  fast   qwen3.5:4b           quick ask / fast coding'
     Write-Host '  review work model           separate read-only review session by default'
     Write-Host ''
@@ -2445,7 +2489,7 @@ function Show-AgentRecommendedModels {
 }
 
 function Install-AgentRecommendedModels {
-    $targets=@('qwen3.5:9b-q4_K_M','qwen3.5:4b')
+    $targets=@('qwen3:8b','qwen3.5:4b')
     foreach($m in $targets){
         if(Test-OllamaModelInstalled $m){Write-Host "[PASS] $m" -ForegroundColor Green;continue}
         Install-AgentOllamaModel $m
@@ -2500,7 +2544,8 @@ function New-AgentRuntimeModelConfig {
     param(
         [Parameter(Mandatory)][string]$BaseConfig,
         [Parameter(Mandatory)][string]$Model,
-        [Parameter(Mandatory)][string]$Role
+        [Parameter(Mandatory)][string]$Role,
+        [string]$OutputDirectory=$script:AgentHome
     )
     if ($Model -notmatch '^[A-Za-z0-9._/:+\-]+$') { throw "Unsupported Ollama model name: $Model" }
     $baseModel = Get-ConfiguredModelName $BaseConfig
@@ -2523,7 +2568,8 @@ function New-AgentRuntimeModelConfig {
     }
     $safe = ($Model -replace '[^A-Za-z0-9._-]','_')
     if ($safe.Length -gt 70) { $safe = $safe.Substring(0,70) }
-    $target = Join-Path $script:AgentHome "runtime-$Role-$safe-$($budget.Context)-$($budget.Output).yaml"
+    if(-not(Test-Path -LiteralPath $OutputDirectory)){New-Item -ItemType Directory -Force -Path $OutputDirectory|Out-Null}
+    $target = Join-Path $OutputDirectory "runtime-$Role-$safe-$($budget.Context)-$($budget.Output).yaml"
     $text | Set-Content -Encoding UTF8 -LiteralPath $target
     return $target
 }
@@ -2560,6 +2606,8 @@ function Set-AgentRoleModel {
     if (-not (Test-OllamaModelInstalled $Model)) { throw "Ollama model is not installed: $Model" }
     Write-Host "  checking native tool calling: $Model ..." -ForegroundColor DarkGray
     Test-OllamaToolCalling $Model
+    Write-Host "  checking complete Continue tool round-trip: $Model ..." -ForegroundColor DarkGray
+    Test-ContinueToolRoundTrip $Model | Out-Null
     switch ($Role) {
         'work' { $script:AgentWorkModel=$Model; Set-AgentPreference 'workModel' $Model }
         'fast' { $script:AgentFastModel=$Model; Set-AgentPreference 'fastModel' $Model }
@@ -2712,8 +2760,8 @@ function Resolve-AgentIntent {
     #   "обнови README.md"
     #   "перепиши документацию"
     #   "дополни spec.txt"
-    if ($t -match '(редактир|отредактир|обнови|измени|перепиши|дополни|расширь|заполни|оформи|преврати).{0,80}(?:\.md\b|\.txt\b|readme\b|документ|документац|спек|spec\b|requirements\b)' -or
-        $t -match '(?:\.md\b|\.txt\b|readme\b|документ|документац|спек|spec\b|requirements\b).{0,80}(редактир|отредактир|обнови|измени|перепиши|дополни|расширь|заполни|оформи|преврати)') {
+    if ($t -match '(редактир|отредактир|обнови|измени|улучш|сделай|создай|перепиши|дополни|расширь|заполни|оформи|преврати).{0,80}(?:\.md\b|\.txt\b|readme\b|документ|документац|мастер.?спек|master.?spec|спек|spec\b|requirements\b)' -or
+        $t -match '(?:\.md\b|\.txt\b|readme\b|документ|документац|мастер.?спек|master.?spec|спек|spec\b|requirements\b).{0,80}(редактир|отредактир|обнови|измени|улучш|сделай|создай|перепиши|дополни|расширь|заполни|оформи|преврати)') {
         return 'docs'
     }
 
@@ -3276,6 +3324,11 @@ function Start-AgentShell {
     $script:AgentWorkModel=[string](Get-AgentPreference 'workModel' $null)
     $script:AgentFastModel=[string](Get-AgentPreference 'fastModel' $null)
     $script:AgentReviewModel=[string](Get-AgentPreference 'reviewModel' $null)
+    $modelSchema=[int](Get-AgentPreference 'modelQualificationSchemaVersion' 0)
+    if($modelSchema -lt 2 -and $script:AgentWorkModel -in @('qwen3.5:9b-q4_K_M','qwen3.5:4b') -and (Test-OllamaModelInstalled 'qwen3:8b')){
+        $script:AgentWorkModel='qwen3:8b';Set-AgentPreference 'workModel' 'qwen3:8b';Set-AgentPreference 'modelQualificationSchemaVersion' 2
+        Write-Host '[WARN] Рабочая модель обновлена до qwen3:8b: предыдущая модель теряла ответы после tool calls.' -ForegroundColor Yellow
+    }elseif($modelSchema -lt 2){Set-AgentPreference 'modelQualificationSchemaVersion' 2}
     $script:AgentReadDirs=@(Get-AgentReadDirectories -RepositoryRoot $root)
 
     $leaf=Split-Path $root -Leaf
@@ -3335,6 +3388,12 @@ function Start-AgentShell {
         if ($line -match '^/mode(?:\s+(code|plan|debug|refactor|test|review|explain|docs))?$') {
             if($Matches[1]){Set-AgentCodingMode $Matches[1]}else{Show-AgentModes}; continue
         }
+        # The compact help presents these as modes. Accept the natural shorthand
+        # instead of letting /plan fall through to the workflow catalog and fail.
+        if ($line -match '^/(code|plan|debug|explain)$') {
+            Set-AgentCodingMode $Matches[1]
+            continue
+        }
         if ($line -match '^/effort(?:\s+(low|medium|high))?$') {
             if($Matches[1]){Set-AgentEffort $Matches[1]}else{Write-Host "effort: $(Get-AgentEffort)" -ForegroundColor Cyan}; continue
         }
@@ -3389,6 +3448,18 @@ function Start-AgentShell {
         if ($line -eq '/settings') { Show-AgentSettings -RepositoryRoot $root -Fast:$Fast; continue }
         if ($line -eq '/status' -or $line -match '^status\??$') { Show-AgentProductStatus -RepositoryRoot $root -Fast:$Fast -AllowDependencies:$AllowDependencies; continue }
 
+        # Conversational follow-ups belong to an unfinished mutating workflow.
+        # Starting a fresh /analysis here loses the user's implementation goal.
+        if($line -match '^(?:и\??|дальше|продолжай|где\s+(?:же\s+)?(?:код|реализац)|ты\s+(?:код\s+)?писать\s+будешь|нет[,!]?\s+надо|ладно[,!]?\s+на\s+основе)'){
+            $followState=Get-AgentState
+            $followStatus=if($followState.PSObject.Properties['resumableSemanticStatus']){[string]$followState.resumableSemanticStatus}else{''}
+            $followWorkflow=if($followState.PSObject.Properties['resumableWorkflow']){[string]$followState.resumableWorkflow}else{''}
+            if($followStatus -ne 'PASS' -and $followWorkflow -in @('feature','bugfix','hotfix','refactor','test','docs','migration','performance','security','deliver-feature','deliver-bugfix','deliver-hotfix')){
+                $line='/continue '+$line
+                Write-Host "  продолжаю незавершённую /$followWorkflow" -ForegroundColor DarkGray
+            }
+        }
+
         if ($line -match '^/verbose\s+(on|off)$') {
             $script:AgentVerboseOutput = ($Matches[1] -eq 'on')
             Write-Host "[PASS] verbose: $($script:AgentVerboseOutput)" -ForegroundColor Green
@@ -3439,6 +3510,11 @@ function Start-AgentShell {
             $teamTask=[string]$Matches[1]
             if([string]::IsNullOrWhiteSpace($teamTask)){$teamTask=Read-Host 'Team task/goal'}
             try{Invoke-AgentTeamPipeline -ProjectRoot $root -Task $teamTask -Fast:$Fast -AllowDependencies:$AllowDependencies}catch{Write-Host "[FAIL] $($_.Exception.Message)" -ForegroundColor Red}
+            continue
+        }
+        if ($line -match '^(fast|balanced|quality)$') {
+            Write-Host "Did you mean /budget $line ?" -ForegroundColor Yellow
+            Write-Host "Use /budget $line to change the budget; plain text is treated as a task." -ForegroundColor DarkGray
             continue
         }
 
@@ -3505,6 +3581,75 @@ function Get-AgentWorkflowSkillPaths {
     return @($names | ForEach-Object { Join-Path $script:SkillHome $_ } | Where-Object { Test-Path $_ })
 }
 
+function Get-AgentNativeSystemPrompt {
+    param([Parameter(Mandatory)][string]$WorkflowName,[switch]$ReadOnly)
+    $mutation=if($ReadOnly){'This workflow is READ ONLY. Never call write_file, replace_text, or replace_lines.'}else{'Implement the requested work in the repository. Do not stop after planning or documentation when code is requested. Preserve the project test framework and imports. Use replace_text or replace_lines for existing files; write_file is only for new files.'}
+    return @"
+You are Local Coding Agent, an autonomous repository engineering agent on Windows.
+$mutation
+Work in small evidence-driven steps: inspect, change, read every changed region again, run targeted verification, inspect the result, and continue until the task is genuinely complete or blocked. A test command is successful only when the shell tool returns ExitCode: 0; never reinterpret an ERROR or nonzero result as success.
+Use repository tools instead of guessing. Preserve existing user changes. Do not modify dependencies unless the task explicitly requires it. Never claim a command ran unless its tool result proves it.
+The active workflow is /$WorkflowName. Do not start a different workflow and do not ask routine questions discoverable from the repository.
+When finished, emit TASK_COMPLETE on its own line followed by exactly:
+FINAL RESULT: PASS
+WORKFLOW: $WorkflowName
+SUMMARY
+<actual outcome>
+CHANGED FILES
+- <files or NONE>
+VERIFICATION
+- <checks and evidence>
+ACCEPTANCE
+- <criteria and status>
+RISKS / NOT VERIFIED
+- <risks or NONE>
+NEXT
+<next action or NONE>
+If genuinely blocked, use TASK_BLOCKED and FINAL RESULT: BLOCKED with the same sections.
+"@
+}
+
+function Invoke-AgentNativeManagedRun {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,[Parameter(Mandatory)][string]$WorkflowName,
+        [Parameter(Mandatory)][string]$Task,[Parameter(Mandatory)]$Evidence,[switch]$ReadOnly,
+        $SourceBundle,$Inventory,[switch]$AllowDependencyChanges
+    )
+    if(-not(Get-Command Invoke-NativeOllamaAgentLoop -ErrorAction SilentlyContinue)){throw "Native Ollama runtime is missing: $script:NativeLoopPath"}
+    $taskParts=New-Object Collections.Generic.List[string]
+    [void]$taskParts.Add("USER TASK:`n$Task")
+    if($Inventory){[void]$taskParts.Add("REPOSITORY INVENTORY:`n$($Inventory|ConvertTo-Json -Depth 6 -Compress)")}
+    if($SourceBundle -and (Test-Path -LiteralPath $SourceBundle.Path)){
+        $requirements=Get-Content -LiteralPath $SourceBundle.Path -Raw
+        [void]$taskParts.Add("SUPPLIED REQUIREMENTS EVIDENCE:`n$requirements")
+    }
+    if($Task -match '(?i)continue the previous|продолж'){
+        $state=Get-AgentState
+        $previousEvidence=if($state.PSObject.Properties['resumableEvidenceDirectory']){[string]$state.resumableEvidenceDirectory}else{''}
+        $previousTranscript=if($previousEvidence){Join-Path $previousEvidence 'native-agent-transcript.json'}else{''}
+        if($previousTranscript -and (Test-Path -LiteralPath $previousTranscript)){
+            $history=Get-Content -LiteralPath $previousTranscript -Raw
+            if($history.Length -gt 24000){$history=$history.Substring($history.Length-24000)}
+            [void]$taskParts.Add("PREVIOUS NATIVE AGENT TRANSCRIPT (continue from this state; do not repeat completed work):`n$history")
+        }
+    }
+    $model=Get-AgentRoleModel 'work'
+    $transcriptPath=Join-Path $Evidence.evidenceDirectory 'native-agent-transcript.json'
+    Write-Host "  -> Native Ollama agent loop: $model" -ForegroundColor Cyan
+    $result=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model $model -SystemPrompt (Get-AgentNativeSystemPrompt -WorkflowName $WorkflowName -ReadOnly:$ReadOnly) -Task ($taskParts -join "`n`n") -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -TranscriptPath $transcriptPath
+    [ordered]@{model=$model;promptTokens=$result.TotalPromptTokens;outputTokens=$result.TotalOutputTokens;totalTokens=([int]$result.TotalPromptTokens+[int]$result.TotalOutputTokens);completed=$result.Completed}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Evidence.evidenceDirectory 'native-usage.json') -Encoding UTF8
+    Write-Host "  tokens total: prompt $($result.TotalPromptTokens) - output $($result.TotalOutputTokens)" -ForegroundColor DarkGray
+    $output=[string]$result.FinalOutput
+    if([string]::IsNullOrWhiteSpace($output)){
+        $lastAssistant=@($result.Transcript|Where-Object{$_.Role -eq 'assistant'}|Select-Object -Last 1)
+        if($lastAssistant.Count){$output=[string]$lastAssistant[0].Content}
+    }
+    $output=[regex]::Replace($output,'(?im)^\s*\*{0,2}FINAL RESULT:\*{0,2}\s*(PASS|PARTIAL|BLOCKED|FAIL)\s*\*{0,2}\s*$','FINAL RESULT: $1')
+    if($result.Completed -and -not(Get-FinalResultStatus $output)){$output="FINAL RESULT: PASS`nWORKFLOW: $WorkflowName`n`nSUMMARY`n$output"}
+    $output|Set-Content -LiteralPath (Join-Path $Evidence.evidenceDirectory 'model-output.txt') -Encoding UTF8
+    [pscustomobject]@{ExitCode=0;Output=$output;NativeResult=$result;TimedOut=$false}
+}
+
 function Invoke-AgentWorkflow {
     [CmdletBinding()]
     param(
@@ -3522,6 +3667,8 @@ function Invoke-AgentWorkflow {
     if (-not (Get-Command cn -ErrorAction SilentlyContinue)) { throw "Continue CLI 'cn' was not found in PATH." }
     if ($Managed -and $Auto) { throw 'Managed workflows do not support -Auto because Continue --auto overrides all allow/exclude guardrails. Use managed mode without -Auto, or explicitly choose raw agent-tui/agent-auto if you accept that risk.' }
     $root = Resolve-AgentProjectRoot -StartPath $(if($ProjectRoot){$ProjectRoot}else{(Get-Location).Path})
+    $managedRuntime=[string](Get-AgentPreference 'managedRuntime' 'native')
+    if($Managed -and $managedRuntime -eq 'continue'){Ensure-AgentWorkingToolModel|Out-Null}
     $workflowFile = Join-Path $script:WorkflowHome "$Workflow.md"
     if (-not (Test-Path $workflowFile)) { throw "Workflow not found: $workflowFile" }
     $config = Get-AgentEffectiveConfig -Role 'work' -Fast:$Fast
@@ -3583,7 +3730,12 @@ function Invoke-AgentWorkflow {
     $script:LastQualityScore = $null
     try {
         if ($Managed -or $Headless) {
-            $run = Invoke-CnCaptured -RepositoryRoot $root -Arguments $cnArgs -OutputPath (Join-Path $evidence.evidenceDirectory 'model-output.txt') -DeveloperProgress -Language (Get-AgentLanguage $taskText)
+            $useNativeRuntime=$Managed -and $managedRuntime -eq 'native'
+            if($useNativeRuntime){
+                $run=Invoke-AgentNativeManagedRun -RepositoryRoot $root -WorkflowName $workflowName -Task $taskText -Evidence $evidence -ReadOnly:$ReadOnly -AllowDependencyChanges:$effectiveAllowDependencies -SourceBundle $sourceBundle -Inventory $inventory
+            }else{
+                $run = Invoke-CnCaptured -RepositoryRoot $root -Arguments $cnArgs -OutputPath (Join-Path $evidence.evidenceDirectory 'model-output.txt') -DeveloperProgress -Language (Get-AgentLanguage $taskText)
+            }
             $code = $run.ExitCode
             if([string]::IsNullOrWhiteSpace([string]$run.Output)){
                 @(
@@ -3595,7 +3747,7 @@ function Invoke-AgentWorkflow {
             }
             $semantic = Get-FinalResultStatus $run.Output
             $complianceForcedFailure=$false
-            if(-not $run.TimedOut -and (Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText)){
+            if(-not $useNativeRuntime -and -not $run.TimedOut -and (Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText)){
                 $complianceSkillPath=Join-Path $script:SkillHome 'documentation-compliance.md'
                 if(-not(Test-AgentComplianceResult -WorkflowName $workflowName -TaskText $taskText -Text $run.Output)){
                     $complianceRecovery=Invoke-AgentComplianceRecovery -RepositoryRoot $root -Evidence $evidence -WorkflowName $workflowName -Task $taskText -PreviousOutput $run.Output -Config $config -WorkflowFile $workflowFile -ComplianceSkill $complianceSkillPath
@@ -3618,7 +3770,7 @@ function Invoke-AgentWorkflow {
                     }
                 }
             }
-            if (-not $semantic) {
+            if (-not $semantic -and -not $useNativeRuntime) {
                 $recovery = Invoke-AgentRecovery -RepositoryRoot $root -Evidence $evidence -WorkflowName $workflowName -Task $taskText -PreviousOutput $run.Output -Config $config
                 $semantic = Get-FinalResultStatus $recovery.Output
             }
@@ -3849,6 +4001,47 @@ function Test-OllamaToolCalling {
     if ($null -eq $toolCallsProp -or @($toolCallsProp.Value).Count -lt 1) {
         throw "Model '$Model' returned no native tool call."
     }
+}
+
+function Test-ContinueToolRoundTrip {
+    param([Parameter(Mandatory)][string]$Model)
+    $key=$Model.ToLowerInvariant()
+    if($script:QualifiedToolModels.ContainsKey($key)){return $true}
+    if(-not(Get-Command cn -ErrorAction SilentlyContinue)){throw "Continue CLI 'cn' was not found in PATH."}
+    $probeRoot=Join-Path ([IO.Path]::GetTempPath()) ('lca-tool-probe-'+[guid]::NewGuid().ToString('N'))
+    $nonce='LCA-'+[guid]::NewGuid().ToString('N')
+    try{
+        New-Item -ItemType Directory -Force -Path $probeRoot|Out-Null
+        Set-Content -LiteralPath (Join-Path $probeRoot 'probe.txt') -Encoding UTF8 -Value $nonce
+        $probeConfig=New-AgentRuntimeModelConfig -BaseConfig $script:ConfigAgent -Model $Model -Role 'tool-probe' -OutputDirectory $probeRoot
+        Push-Location $probeRoot
+        try{
+            $reply=(& cn --config $probeConfig --allow Read --exclude Bash --exclude Edit --exclude MultiEdit --exclude Write --silent -p 'Use the Read tool to read probe.txt, then reply with its exact contents.' 2>&1 | Out-String)
+            $probeExit=$LASTEXITCODE
+        }finally{Pop-Location}
+        if($probeExit -ne 0 -or [string]::IsNullOrWhiteSpace($reply) -or $reply -notmatch [regex]::Escape($nonce)){
+            throw "Model '$Model' emits a native tool call but fails the Continue tool round-trip (empty/incomplete answer after Read)."
+        }
+        $script:QualifiedToolModels[$key]=$true
+        return $true
+    }finally{Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue}
+}
+
+function Ensure-AgentWorkingToolModel {
+    $work=Get-AgentRoleModel 'work'
+    try{Test-ContinueToolRoundTrip $work|Out-Null;return $work}catch{$workFailure=$_.Exception.Message}
+    $fallback=Get-AgentRoleModel 'fast'
+    if($fallback -and -not $fallback.Equals($work,[StringComparison]::OrdinalIgnoreCase)){
+        try{
+            Test-OllamaToolCalling $fallback
+            Test-ContinueToolRoundTrip $fallback|Out-Null
+            $script:AgentWorkModel=$fallback
+            Set-AgentPreference 'workModel' $fallback
+            Write-Host "[WARN] Work model '$work' failed the real tool round-trip; switched to '$fallback'." -ForegroundColor Yellow
+            return $fallback
+        }catch{}
+    }
+    throw "$workFailure No qualified fallback model is available. Choose one with /model work <name>."
 }
 
 function agent-doctor {

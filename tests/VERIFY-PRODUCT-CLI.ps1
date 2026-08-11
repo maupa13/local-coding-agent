@@ -6,6 +6,8 @@ $root=Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $m=Get-Content (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
 function Need([string]$Name,[string]$Text){if(-not $m.Contains($Text)){throw $Name}}
 Need '/model command' "'^/model(?:\s+(.*))?$'"
+Need '/plan mode shorthand' "'^/(code|plan|debug|explain)`$'"
+Need 'bare budget value guard' 'Did you mean /budget $line'
 Need 'model role runtime' 'function Get-AgentRoleModel'
 Need 'dynamic model config' 'function New-AgentRuntimeModelConfig'
 Need 'tool-call qualification' 'Test-OllamaToolCalling $Model'
