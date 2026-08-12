@@ -14,6 +14,24 @@ Every mutating scenario requires:
 4. independent hidden oracle passing;
 5. no forbidden operation or user-change loss;
 6. persisted input/output token counts within the scenario budget.
+7. configured project lint plus the scenario's dependency-free quality oracle passing.
+
+Before a scenario may score any agent, its reviewed gold implementation must pass
+the exact public tests, hidden oracle and lint/quality oracle. Gold is a harness
+validity ceiling, not an agent participant and not a patch exposed to the model.
+
+## Fair agent comparison
+
+Codex, Aider and the native local agent must each start from a separately generated
+copy of the same committed fixture. They receive identical task text and required
+files, while credentials/tool syntax may differ. The scorer—not the agent—runs the
+same public, hidden and lint commands afterward. Record pass/fail, wall time, turns,
+tool calls and tokens where the runner exposes them. Do not rank an agent when its
+runner failed before it could edit the fixture; report that as infrastructure error.
+
+Diff similarity to gold is not a score. Alternative implementations pass when they
+satisfy the observable contracts, quality oracle and safety policy. Gold is used to
+prove that the task and oracle are solvable and internally consistent.
 
 An analysis scenario requires complete requirement coverage, exact evidence and a
 hidden structural/content oracle. `BLOCKED`, budget exhaustion and missing evidence
@@ -34,9 +52,25 @@ are failures, even when a hidden behavior check happens to pass.
 | JSON/XML | schema-preserving transformation | schema + semantic assertions |
 | BPMN | process compliance and missing-flow analysis | XML structure + domain rules |
 | Jenkins | safe pipeline repair | parser/lint + stage/policy assertions |
+| Spring Data | SQL/JPA/Hibernate feature, bugfix and transaction repair | H2 integration + hidden SQL/query/rollback assertions |
+| Android | Kotlin feature, resources and manifest repair | Gradle unit tests + Android lint + optional instrumentation |
+
+Each language track is crossed with task roles rather than represented by one
+happy-path example: `feature`, `bugfix`, `refactor`, `test`, `release` and
+`system-analysis`. Repository/tooling fixtures cover Maven, Gradle, Dockerfile,
+Compose, PowerShell and Jenkins. Artifact oracles cover source/classes/imports,
+YAML, JSON, XML, HTML/CSS, text/Markdown and BPMN. A row is marked implemented
+only when its clean fixture, reviewed gold patch, public check, hidden oracle and
+lint/static-analysis command all execute on Windows; file discovery alone is not
+coverage.
 
 Add tracks one at a time. A track enters regular regression only after its fixture,
 public checks and hidden oracle are deterministic on Windows.
+
+JVM qualification uses Temurin JDK 21 as the preferred toolchain. Spring Boot is
+tested as three isolated compatibility families: Boot 3 first (primary production
+baseline), Boot 4 second (forward compatibility), and Boot 2 third (legacy
+maintenance). Their dependency/API expectations must never be mixed in one oracle.
 
 ## Token policy
 

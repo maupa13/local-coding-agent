@@ -20,6 +20,8 @@ Release candidate for the first public stable line. Local-first coding agent for
 
 Полное руководство по подготовке проекта, ежедневным workflow, моделям, permissions и диагностике: [USER-GUIDE.md](USER-GUIDE.md).
 
+Настройки по VRAM/RAM, профилям, Java/Spring/Android toolchains и постановке задач: [HARDWARE-AND-CAPABILITIES.md](HARDWARE-AND-CAPABILITIES.md). Отличия от Aider/Cline/OpenHands/SWE-agent и карта развития: [POSITIONING-AND-ROADMAP.md](POSITIONING-AND-ROADMAP.md).
+
 ## Install candidate
 
 ```powershell

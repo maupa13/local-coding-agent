@@ -118,6 +118,12 @@
 
 # Changelog
 
+- Reserved four additional orchestration turns for final verification/repair while retaining the existing 80k token, 30-tool and 10-shell hard caps. Added a bounded initial repository snapshot, task-derived completion checks (placeholder, explicit test-count and Python contract imports), and direct `read_file` recovery guidance for rejected shell-based file reads.
+- Re-ran the Aider 0.86.2 Python baseline under UTF-8 in an isolated fixture: public placeholder test passed, but the independent hidden oracle failed 2/3 behaviors. This replaces the earlier invalid cp1251 comparison with a valid quality result.
+- Added separate persisted lint evidence and a configured-lint completion gate. Test/build PASS can no longer substitute for lint PASS, lint alone cannot substitute for tests, and any later write invalidates both results.
+- Added a reviewed Python gold baseline and dependency-free lint/quality oracle. The gold baseline passes 6 public tests, 3 hidden tests and lint; model candidates now run the same lint oracle after public and hidden checks.
+- Added configurable hardware profiles in `config/hardware-profiles.json`. Auto mode selects conservative low-VRAM, balanced 12 GB, or large-VRAM context/snapshot budgets; explicit profile selection and per-setting overrides remain available. Applied settings are persisted in run evidence.
+
 ## 1.0.0-dev — Startup & Behavior Qualification
 
 - Reworked Continue capture to use `System.Diagnostics.Process` with separate stdout/stderr streams; harmless Git LF/CRLF warnings no longer traverse the parent PowerShell error stream.

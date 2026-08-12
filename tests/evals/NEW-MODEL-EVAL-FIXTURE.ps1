@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([Parameter(Mandatory)][ValidateSet('node-bugfix','python-feature','java-refactor','powershell-analysis')][string]$Scenario,[Parameter(Mandatory)][string]$Path)
+param([Parameter(Mandatory)][ValidateSet('node-bugfix','python-feature','java-refactor','kotlin-feature','rust-feature','frontend-feature','powershell-analysis')][string]$Scenario,[Parameter(Mandatory)][string]$Path)
 Set-StrictMode -Version Latest;$ErrorActionPreference='Stop'
 if(Test-Path -LiteralPath $Path){Remove-Item -LiteralPath $Path -Recurse -Force}
 New-Item -ItemType Directory -Force -Path $Path|Out-Null
@@ -63,8 +63,35 @@ class PriceCalculatorTest {
 }
 '@|Set-Content -Encoding UTF8 (Join-Path $Path 'src\test\java\eval\PriceCalculatorTest.java')
     @'
-<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>eval</groupId><artifactId>refactor-eval</artifactId><version>1</version><properties><maven.compiler.release>17</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties><dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.4</version><scope>test</scope></dependency></dependencies><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin></plugins></build></project>
+<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>eval</groupId><artifactId>refactor-eval</artifactId><version>1</version><properties><maven.compiler.release>17</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties><dependencies><dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.11.4</version><scope>test</scope></dependency></dependencies><build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-checkstyle-plugin</artifactId><version>3.6.0</version><configuration><configLocation>checkstyle.xml</configLocation><failOnViolation>true</failOnViolation></configuration></plugin></plugins></build></project>
 '@|Set-Content -Encoding UTF8 (Join-Path $Path 'pom.xml')
+    @'
+<?xml version="1.0"?><!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN" "https://checkstyle.org/dtds/configuration_1_3.dtd"><module name="Checker"><module name="FileTabCharacter"/><module name="TreeWalker"><module name="AvoidStarImport"/><module name="UnusedImports"/></module></module>
+'@|Set-Content -Encoding UTF8 (Join-Path $Path 'checkstyle.xml')
+  }
+  'kotlin-feature' {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Path 'src\main\kotlin\eval'),(Join-Path $Path 'src\test\kotlin\eval'),(Join-Path $Path 'docs')|Out-Null
+    "# Slug feature`n`nImplement ``eval.Slugifier.slug(String?): String`` in Kotlin. Trim input, lowercase with locale-independent rules, convert every run of non-ASCII-alphanumeric characters to one ``-``, strip edge separators, and reject null/blank/results that contain no alphanumeric characters. Preserve Java-callable static API. Add tests."|Set-Content -Encoding UTF8 (Join-Path $Path 'docs\feature.md')
+    "package eval`n`nobject Slugifier {`n    @JvmStatic`n    fun slug(value: String?): String = TODO(`"Implement docs/feature.md`")`n}"|Set-Content -Encoding UTF8 (Join-Path $Path 'src\main\kotlin\eval\Slugifier.kt')
+    "package eval`n`nimport kotlin.test.Test`nimport kotlin.test.assertEquals`n`nclass SlugifierTest {`n    @Test fun placeholder() = assertEquals(`"todo`", `"todo`")`n}"|Set-Content -Encoding UTF8 (Join-Path $Path 'src\test\kotlin\eval\SlugifierTest.kt')
+    "plugins { kotlin(`"jvm`") version `"2.2.0`"; id(`"io.gitlab.arturbosch.detekt`") version `"1.23.8`" }`nrepositories { mavenCentral() }`ndependencies { testImplementation(kotlin(`"test`")) }`njava { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }`nkotlin { compilerOptions { allWarningsAsErrors.set(true); jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21) } }`ndetekt { buildUponDefaultConfig = true; allRules = false }`ntasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach { jvmTarget = `"21`" }`ntasks.test { useJUnitPlatform() }"|Set-Content -Encoding UTF8 (Join-Path $Path 'build.gradle.kts')
+    'rootProject.name = "kotlin-feature-eval"'|Set-Content -Encoding UTF8 (Join-Path $Path 'settings.gradle.kts')
+  }
+  'rust-feature' {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Path 'src'),(Join-Path $Path 'tests'),(Join-Path $Path 'docs')|Out-Null
+    "# Port parser`n`nImplement ``parse_port(&str) -> Result<u16, PortError>``. Trim whitespace, accept decimal digits only and ports 1..=65535. Distinguish Empty, Invalid and OutOfRange. Do not panic."|Set-Content -Encoding UTF8 (Join-Path $Path 'docs\feature.md')
+    "#[derive(Debug, PartialEq, Eq)]`npub enum PortError { Empty, Invalid, OutOfRange }`n`npub fn parse_port(_value: &str) -> Result<u16, PortError> {`n    todo!()`n}"|Set-Content -Encoding UTF8 (Join-Path $Path 'src\lib.rs')
+    "use rust_feature::{parse_port, PortError};`n`n#[test]`nfn placeholder() { assert_eq!(parse_port(`"`"), Err(PortError::Empty)); }"|Set-Content -Encoding UTF8 (Join-Path $Path 'tests\port_test.rs')
+    "[package]`nname = `"rust-feature`"`nversion = `"0.1.0`"`nedition = `"2024`"`n`n[dependencies]"|Set-Content -Encoding UTF8 (Join-Path $Path 'Cargo.toml')
+  }
+  'frontend-feature' {
+    New-Item -ItemType Directory -Force -Path (Join-Path $Path 'src'),(Join-Path $Path 'tests'),(Join-Path $Path 'docs')|Out-Null
+    "# Accessible disclosure`n`nImplement HTML/CSS/JS disclosure. Button id toggle controls panel id details. Export initDisclosure(document). Initial panel hidden and aria-expanded=false; click toggles both. Use semantic button, visible focus, responsive layout at 600px, no dependencies."|Set-Content -Encoding UTF8 (Join-Path $Path 'docs\feature.md')
+    '<main><div id="toggle">Details</div><div id="details">Content</div></main>'|Set-Content -Encoding UTF8 (Join-Path $Path 'src\index.html')
+    '/* implement accessible responsive disclosure */'|Set-Content -Encoding UTF8 (Join-Path $Path 'src\styles.css')
+    'export function initDisclosure(document) { throw new Error("TODO"); }'|Set-Content -Encoding UTF8 (Join-Path $Path 'src\disclosure.mjs')
+    "import test from 'node:test';`nimport assert from 'node:assert/strict';`ntest('placeholder',()=>assert.equal(true,true));"|Set-Content -Encoding UTF8 (Join-Path $Path 'tests\disclosure.test.mjs')
+    '{"scripts":{"test":"node --test","lint":"node --check src/disclosure.mjs"},"type":"module"}'|Set-Content -Encoding UTF8 (Join-Path $Path 'package.json')
   }
   'powershell-analysis' {
     New-Item -ItemType Directory -Force -Path (Join-Path $Path 'docs'),(Join-Path $Path 'src'),(Join-Path $Path 'tests')|Out-Null
@@ -100,6 +127,7 @@ $old=$ErrorActionPreference;$ErrorActionPreference='Continue'
 try{
   & git -C $Path init -q;if($LASTEXITCODE -ne 0){throw 'git init failed'}
   & git -C $Path config user.email 'eval@example.invalid'; & git -C $Path config user.name 'Model Eval'
+  & git -C $Path config core.autocrlf false
   & git -C $Path add .; & git -C $Path commit -q -m baseline;if($LASTEXITCODE -ne 0){throw 'git commit failed'}
 }finally{$ErrorActionPreference=$old}
 Write-Host "[PASS] $Scenario fixture: $Path"

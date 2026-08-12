@@ -3810,8 +3810,13 @@ function Invoke-AgentWorkflow {
                     $combined = if(Test-Path (Join-Path $evidence.evidenceDirectory 'compliance-recovery-output.txt')){Get-Content (Join-Path $evidence.evidenceDirectory 'compliance-recovery-output.txt') -Raw}elseif(Test-Path (Join-Path $evidence.evidenceDirectory 'recovery-output.txt')){Get-Content (Join-Path $evidence.evidenceDirectory 'recovery-output.txt') -Raw}else{$run.Output}
                     $terminal=Get-AgentTerminalFinalReport -Text $combined
                     if(-not [string]::IsNullOrWhiteSpace($terminal)){
+                        $persistedFinal=$terminal
+                        if($useNativeRuntime -and (Test-AgentComplianceTask -WorkflowName $workflowName -TaskText $taskText)){
+                            $matrix=[regex]::Match($combined,'(?ims)^\s*(?:#{1,6}\s*)?(?:COMPLIANCE\s+MATRIX|МАТРИЦ[АЫ]\s+СООТВЕТСТВ)\s*$.*?(?=^\s*(?:TASK_COMPLETE\s*$|FINAL RESULT:))')
+                            if($matrix.Success){$persistedFinal=$matrix.Value.Trim()+"`n`n"+$terminal.Trim()}
+                        }
                         $terminal | Set-Content -Encoding UTF8 (Join-Path $evidence.evidenceDirectory 'model-final-result.txt')
-                        $terminal | Set-Content -Encoding UTF8 (Join-Path $evidence.evidenceDirectory 'final-result.txt')
+                        $persistedFinal | Set-Content -Encoding UTF8 (Join-Path $evidence.evidenceDirectory 'final-result.txt')
                     }
                 }
             }

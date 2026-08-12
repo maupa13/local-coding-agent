@@ -179,6 +179,8 @@ Copy-Item (Join-Path $PackageRoot 'powershell\MicroRuntime.ps1') (Join-Path $Age
 Copy-Item (Join-Path $PackageRoot 'powershell\WorkflowState.ps1') (Join-Path $AgentHome 'WorkflowState.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\ArtifactAnalysis.ps1') (Join-Path $AgentHome 'ArtifactAnalysis.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'config\work-item-workflows.json') (Join-Path $AgentHome 'work-item-workflows.json') -Force
+Copy-Item (Join-Path $PackageRoot 'config\hardware-profiles.json') (Join-Path $AgentHome 'hardware-profiles.json') -Force
+Copy-Item (Join-Path $PackageRoot 'config\toolchains.json') (Join-Path $AgentHome 'toolchains.json') -Force
 Copy-Item (Join-Path $PackageRoot 'integrations\IDEA-LAUNCH.ps1') (Join-Path $AgentHome 'IDEA-LAUNCH.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\UNINSTALL.ps1') (Join-Path $AgentHome 'UNINSTALL.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'workflows\catalog.json') (Join-Path $AgentHome 'catalog.json') -Force

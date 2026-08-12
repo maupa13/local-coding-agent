@@ -1,0 +1,17 @@
+{
+  "java": {
+    "preferredMajor": 21,
+    "preferredDistribution": "temurin",
+    "javaHome": "C:\\Users\\Admin\\scoop\\apps\\temurin21-jdk\\current",
+    "fallbackMajors": [17],
+    "springBootPriority": [3, 4, 2],
+    "springData": ["sql", "jpa", "hibernate", "transactions", "migrations"]
+  },
+  "android": {
+    "sdkRoot": "C:\\Users\\Admin\\AppData\\Local\\Android\\Sdk",
+    "compileSdk": 36,
+    "buildTools": "36.0.0",
+    "requiredGates": ["assemble", "unitTest", "lint", "manifest", "resources"],
+    "instrumentationWhenEmulatorAvailable": true
+  }
+}

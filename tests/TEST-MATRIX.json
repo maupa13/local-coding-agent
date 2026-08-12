@@ -440,6 +440,41 @@
       "description": "BPMN, XSD, JSON Schema, and textual specifications are parsed deterministically before model interpretation",
       "test": "tests/VERIFY-ARTIFACT-ANALYSIS.ps1",
       "tier": "regression"
+    },
+    {
+      "id": "REG-054",
+      "area": "model-evaluation",
+      "description": "Python gold baseline proves public, hidden and lint oracles are jointly satisfiable before agent scoring",
+      "test": "tests/VERIFY-MODEL-EVAL-GOLD.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-055",
+      "area": "platform-evaluation",
+      "description": "Executable gold gates cover Docker, Compose, PowerShell, JSON, XML, BPMN, Jenkins and system-analysis traceability",
+      "test": "tests/VERIFY-PLATFORM-GOLD.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-056",
+      "area": "role-git-evaluation",
+      "description": "Feature, bugfix, refactor, test, release and analysis roles have executable scorers; Git HEAD, user changes and agent side effects are guarded",
+      "test": "tests/VERIFY-ROLE-GIT-GATES.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-057",
+      "area": "spring-data-evaluation",
+      "description": "Spring Boot 2, 3 and 4 SQL/JPA/Hibernate transaction contracts execute on Temurin 21",
+      "test": "tests/VERIFY-SPRING-DATA-GOLD.ps1",
+      "tier": "regression"
+    },
+    {
+      "id": "REG-058",
+      "area": "android-evaluation",
+      "description": "Android SDK unit tests, strict lint, manifest/resources and APK assembly execute through an isolated compatible Gradle wrapper",
+      "test": "tests/VERIFY-ANDROID-GOLD.ps1",
+      "tier": "regression"
     }
   ]
 }

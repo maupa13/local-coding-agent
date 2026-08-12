@@ -32,6 +32,17 @@ try{
     $changes=Get-Content (Join-Path $tmp 'changes.json') -Raw|ConvertFrom-Json
     if(@($changes.files) -notcontains 'a.txt'){throw '[FAIL] changed file evidence'}
 
+    $lintDir=Join-Path $tmp 'lint-gate'
+    $lintRun=New-LsdaMicroRun -RepositoryRoot $root -RunDirectory $lintDir -RequireLint
+    Add-LsdaMicroAction -Run $lintRun -Name 'write_file' -Signature 'write|linted' -Succeeded $true -Changed $true|Out-Null
+    Add-LsdaMicroAction -Run $lintRun -Name 'shell' -Signature 'shell|tests' -Succeeded $true -Changed $false -IsVerification $true|Out-Null
+    $missingLint=Test-LsdaMicroDone $lintRun
+    if($missingLint.Allowed -or $missingLint.Reason -notmatch 'lint'){throw '[FAIL] configured lint gate was not required'}
+    Add-LsdaMicroAction -Run $lintRun -Name 'shell' -Signature 'shell|lint' -Succeeded $true -Changed $false -IsVerification $true -IsLint $true|Out-Null
+    if(-not (Test-LsdaMicroDone $lintRun).Allowed -or -not $lintRun.Data.lintPassed -or $lintRun.Data.lintCalls -ne 1){throw '[FAIL] separate test/lint evidence did not allow DONE'}
+    Add-LsdaMicroAction -Run $lintRun -Name 'write_file' -Signature 'write|after-lint' -Succeeded $true -Changed $true|Out-Null
+    if($lintRun.Data.lintPassed -or $lintRun.Data.verificationPassed){throw '[FAIL] edit did not invalidate prior test/lint evidence'}
+
     $recoverDir=Join-Path $tmp 'recover'
     $interrupted=New-LsdaMicroRun -RepositoryRoot $root -RunDirectory $recoverDir
     Add-LsdaMicroAction -Run $interrupted -Name 'write_file' -Signature 'write|interrupted' -Succeeded $true -Changed $true|Out-Null

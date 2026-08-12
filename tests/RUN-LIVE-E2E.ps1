@@ -51,8 +51,19 @@ function Assert-Run([string]$Workflow,[DateTime]$After,[string[]]$AllowedStatuse
   $final=Join-Path $item.Directory 'final-result.txt'
   if(-not(Test-Path -LiteralPath $final)){throw "/$Workflow final-result.txt missing."}
   $text=Get-Content -LiteralPath $final -Raw
-  if($RequireCompliance -and $text -notmatch '(?i)COMPLIANCE MATRIX'){throw '/analysis did not produce COMPLIANCE MATRIX.'}
-  if($RequireCompliance -and $text -notmatch '(?i)REQ-03'){throw '/analysis did not inspect REQ-03.'}
+  if($RequireCompliance){
+    $transcriptPath=Join-Path $item.Directory 'native-agent-transcript.json'
+    $complianceEvidence=$text
+    if(Test-Path -LiteralPath $transcriptPath){$complianceEvidence+="`n"+(Get-Content -LiteralPath $transcriptPath -Raw)}
+    foreach($requirement in 1..8){
+      $id='REQ-{0:D2}' -f $requirement
+      if($complianceEvidence -notmatch [regex]::Escape($id)){throw "/analysis evidence did not inspect $id."}
+    }
+    foreach($evidencePath in @('src/session-store.js','src/token-service.js','tests/session-store.test.js','tests/token-service.test.js')){
+      $pattern=[regex]::Escape($evidencePath).Replace('/','[\\/]')
+      if($complianceEvidence -notmatch $pattern){throw "/analysis compliance evidence omitted $evidencePath."}
+    }
+  }
   if($RequireQualityPass){
     $quality=([string]$item.Session.qualityStatus).ToUpperInvariant()
     if($quality -notin @('PASS','PASS WITH WARNINGS')){throw "/$Workflow quality status $quality is not release-qualified."}
@@ -151,7 +162,7 @@ try{
   $currentWorkflow='bugfix'
   $currentStarted=Get-Date
   $t2=$currentStarted
-  Invoke-AgentWorkflow -Workflow 'bugfix' -DisplayWorkflow 'bugfix' -Task @('Implement REQ-01 through REQ-08 from docs/requirements.md. Read the existing two source and two test files first. Fix validation, TTL expiry boundary, selective clear, clearExpired count, TokenService unique ids/delegation/revoke, and add meaningful node:test regression coverage. Preserve CommonJS exports and package.json. Re-read every changed file and run npm test until ExitCode: 0.') -Headless -Managed -ProjectRoot $FixturePath
+  Invoke-AgentWorkflow -Workflow 'bugfix' -DisplayWorkflow 'bugfix' -Task @('Implement exactly REQ-01 through REQ-08 from docs/requirements.md. Read the existing two source and two test files first. Fix validation, TTL expiry boundary, selective clear, clearExpired count, TokenService unique ids/delegation/revoke. Keep the public API limited to the documented methods. Add 7-10 concise node:test behavioral tests total across the existing two test files; do not add duplicate cases or undocumented methods/return fields. For time tests use one side-effect-free mutable clock and advance it explicitly on the same store instance. Preserve CommonJS exports and package.json. Re-read every changed file and run npm test until ExitCode: 0.') -Headless -Managed -ProjectRoot $FixturePath
   $bugfix=Assert-Run -Workflow 'bugfix' -After $t2 -AllowedStatuses @('PASS') -RequireQualityPass
 
   Push-Location $FixturePath

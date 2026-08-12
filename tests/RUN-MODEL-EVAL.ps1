@@ -74,6 +74,7 @@ foreach($case in @($matrix.scenarios|Where-Object{$Scenario -eq 'All' -or $_.id 
         $python=(Get-Command python.exe -ErrorAction Stop).Source
         Invoke-External $python @('-m','pytest','-q','tests/test_rate_limiter.py') $fixture|Out-Null
         Invoke-External $python @('-m','pytest','-q',(Join-Path $root 'tests\evals\hidden\test_python_feature_hidden.py')) $fixture @{EVAL_PROJECT=$fixture}|Out-Null
+        Invoke-External $python @((Join-Path $root 'tests\evals\lint\verify_python_quality.py'),$fixture) $fixture|Out-Null
       }
       'EVAL-JAVA-REFACTOR' {
         $hiddenTarget=Join-Path $fixture 'src\test\java\eval\PriceCalculatorContractTest.java'

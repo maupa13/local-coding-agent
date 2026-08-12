@@ -1,0 +1,9 @@
+{
+  "mode": "auto",
+  "profiles": {
+    "low-vram": {"maximumVramGb": 7, "contextTokens": 8192, "outputTokens": 2048, "runTokens": 50000, "turns": 20, "toolCalls": 28, "shellCalls": 8, "repairCycles": 2, "noProgressActions": 5, "sameActionRepeats": 3, "commandTimeoutSeconds": 120, "recentMessages": 4, "snapshotFiles": 6, "snapshotCharacters": 8000, "parallelModels": 1},
+    "balanced-12gb": {"maximumVramGb": 12, "contextTokens": 16384, "outputTokens": 4096, "runTokens": 600000, "turns": 120, "toolCalls": 140, "shellCalls": 30, "repairCycles": 10, "noProgressActions": 10, "sameActionRepeats": 4, "commandTimeoutSeconds": 180, "recentMessages": 8, "snapshotFiles": 8, "snapshotCharacters": 16000, "parallelModels": 1},
+    "large-vram": {"maximumVramGb": 1024, "contextTokens": 32768, "outputTokens": 4096, "runTokens": 240000, "turns": 48, "toolCalls": 60, "shellCalls": 16, "repairCycles": 4, "noProgressActions": 7, "sameActionRepeats": 4, "commandTimeoutSeconds": 300, "recentMessages": 6, "snapshotFiles": 12, "snapshotCharacters": 24000, "parallelModels": 1}
+  },
+  "overrides": {}
+}

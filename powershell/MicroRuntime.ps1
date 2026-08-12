@@ -23,8 +23,8 @@ function New-LsdaMicroRun {
         [Parameter(Mandatory)][string]$RepositoryRoot,
         [Parameter(Mandatory)][string]$RunDirectory,
         [switch]$ReadOnly,
-        [int]$MaxTurns=15,[int]$MaxToolCalls=30,[int]$MaxShellCalls=10,
-        [int]$MaxRepairCycles=2,[int]$MaxNoProgressActions=5,[int]$MaxSameActionRepeats=3,
+        [int]$MaxTurns=24,[int]$MaxToolCalls=48,[int]$MaxShellCalls=12,
+        [int]$MaxRepairCycles=3,[int]$MaxNoProgressActions=5,[int]$MaxSameActionRepeats=3,[switch]$RequireLint,
         [int]$MaxTokens=50000
     )
     $path=Join-Path $RunDirectory 'run.json'
@@ -42,8 +42,9 @@ function New-LsdaMicroRun {
     $data=[pscustomobject][ordered]@{
         schemaVersion=1;runId=(Split-Path $RunDirectory -Leaf);repositoryRoot=$RepositoryRoot
         state='INVESTIGATE';readOnly=[bool]$ReadOnly;createdAt=$now;updatedAt=$now
-        turns=0;toolCalls=0;shellCalls=0;writeCalls=0;repairCycles=0
+        turns=0;toolCalls=0;successfulToolCalls=0;failedToolCalls=0;shellCalls=0;writeCalls=0;repairCycles=0
         promptTokens=0;outputTokens=0;changed=$false;changedFiles=@();verificationPassed=$false
+        lintRequired=[bool]$RequireLint;lintPassed=$false;lintCalls=0
         lastFailure=$null;blocker=$null
         limits=[pscustomobject]@{maxTurns=$MaxTurns;maxToolCalls=$MaxToolCalls;maxShellCalls=$MaxShellCalls;maxRepairCycles=$MaxRepairCycles;maxNoProgressActions=$MaxNoProgressActions;maxSameActionRepeats=$MaxSameActionRepeats;maxTokens=$MaxTokens}
     }
@@ -74,7 +75,7 @@ function Write-LsdaMicroArtifacts {
     param([Parameter(Mandatory)]$Run)
     $directory=Split-Path -Parent $Run.Path
     $changes=[pscustomobject][ordered]@{changed=[bool]$Run.Data.changed;files=@($Run.Data.changedFiles);writeCalls=[int]$Run.Data.writeCalls}
-    $verification=[pscustomobject][ordered]@{passed=[bool]$Run.Data.verificationPassed;shellCalls=[int]$Run.Data.shellCalls;repairCycles=[int]$Run.Data.repairCycles;lastFailure=$Run.Data.lastFailure}
+    $verification=[pscustomobject][ordered]@{passed=[bool]$Run.Data.verificationPassed;lintRequired=[bool]$Run.Data.lintRequired;lintPassed=[bool]$Run.Data.lintPassed;lintCalls=[int]$Run.Data.lintCalls;shellCalls=[int]$Run.Data.shellCalls;repairCycles=[int]$Run.Data.repairCycles;lastFailure=$Run.Data.lastFailure}
     Write-LsdaMicroJsonAtomic -Path (Join-Path $directory 'changes.json') -Value $changes
     Write-LsdaMicroJsonAtomic -Path (Join-Path $directory 'verification.json') -Value $verification
     $files=if(@($Run.Data.changedFiles).Count){@($Run.Data.changedFiles)|ForEach-Object{"- $_"}}else{@('- NONE')}
@@ -96,21 +97,26 @@ function Add-LsdaMicroTurn {
 function Add-LsdaMicroAction {
     param(
         [Parameter(Mandatory)]$Run,[Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$Signature,[bool]$Succeeded,[bool]$Changed,[string]$Failure,[bool]$IsVerification,[string]$Path
+        [Parameter(Mandatory)][string]$Signature,[bool]$Succeeded,[bool]$Changed,[string]$Failure,[bool]$IsVerification,[bool]$IsLint,[string]$Path
     )
     $Run.Data.toolCalls=[int]$Run.Data.toolCalls+1
+    if(-not $Run.Data.PSObject.Properties['successfulToolCalls']){$Run.Data|Add-Member -NotePropertyName successfulToolCalls -NotePropertyValue 0}
+    if(-not $Run.Data.PSObject.Properties['failedToolCalls']){$Run.Data|Add-Member -NotePropertyName failedToolCalls -NotePropertyValue 0}
+    if($Succeeded){$Run.Data.successfulToolCalls=[int]$Run.Data.successfulToolCalls+1}else{$Run.Data.failedToolCalls=[int]$Run.Data.failedToolCalls+1}
     if($Name -eq 'shell'){$Run.Data.shellCalls=[int]$Run.Data.shellCalls+1}
     if($Changed){
-        $Run.Data.writeCalls=[int]$Run.Data.writeCalls+1;$Run.Data.changed=$true;$Run.Data.verificationPassed=$false
+        $Run.Data.writeCalls=[int]$Run.Data.writeCalls+1;$Run.Data.changed=$true;$Run.Data.verificationPassed=$false;$Run.Data.lintPassed=$false
         if($Path -and @($Run.Data.changedFiles) -notcontains $Path){$Run.Data.changedFiles=@($Run.Data.changedFiles)+@($Path)}
         $Run.NoProgressActions=0;Set-LsdaMicroState $Run 'IMPLEMENT'
     }
     elseif($Name -eq 'shell' -and $IsVerification){$Run.NoProgressActions=0;Set-LsdaMicroState $Run 'VERIFY'}
+    elseif($Succeeded -and $Name -in @('read_file','list_files','search_text')){$Run.NoProgressActions=0}
     else{$Run.NoProgressActions++}
 
     if($Signature -eq $Run.LastAction){$Run.SameActionRepeats++}else{$Run.LastAction=$Signature;$Run.SameActionRepeats=1}
     if($Name -eq 'shell' -and $IsVerification){
-        if($Succeeded){$Run.Data.verificationPassed=$true;$Run.Data.lastFailure=$null}
+        if($IsLint){$Run.Data.lintCalls=[int]$Run.Data.lintCalls+1}
+        if($Succeeded){if($IsLint){$Run.Data.lintPassed=$true}else{$Run.Data.verificationPassed=$true};$Run.Data.lastFailure=$null}
         else{
             $Run.Data.verificationPassed=$false;$Run.Data.lastFailure=$Failure
             $Run.Data.repairCycles=[int]$Run.Data.repairCycles+1
@@ -132,16 +138,27 @@ function Test-LsdaMicroDone {
     if([bool]$Run.Data.readOnly){return [pscustomobject]@{Allowed=$true;Reason=$null}}
     if(-not [bool]$Run.Data.changed){return [pscustomobject]@{Allowed=$false;Reason='no repository write was recorded'}}
     if(-not [bool]$Run.Data.verificationPassed){return [pscustomobject]@{Allowed=$false;Reason='no successful shell verification was recorded after the change'}}
+    if([bool]$Run.Data.lintRequired -and -not [bool]$Run.Data.lintPassed){return [pscustomobject]@{Allowed=$false;Reason='configured repository lint has not passed after the change'}}
     return [pscustomobject]@{Allowed=$true;Reason=$null}
 }
 
 function Test-LsdaMicroBlocked {
     param([Parameter(Mandatory)]$Run)
+    if([string]$Run.Data.state -eq 'BLOCKED'){return [pscustomobject]@{Allowed=$true;Reason=$Run.Data.blocker}}
+    # A model assertion is not evidence of an external blocker. Successful
+    # repository access with no failed action must continue into implementation
+    # (or a read-only report) while deterministic budget remains.
+    if([string]$Run.Data.state -ne 'BLOCKED' -and [int]$Run.Data.successfulToolCalls -gt 0 -and [int]$Run.Data.failedToolCalls -eq 0 -and [int]$Run.Data.turns -lt [int]$Run.Data.limits.maxTurns -and [int]$Run.Data.toolCalls -lt [int]$Run.Data.limits.maxToolCalls){
+        return [pscustomobject]@{Allowed=$false;Reason='repository tools succeeded and no failed tool evidence exists; continue the requested implementation or produce the read-only report'}
+    }
     if([string]$Run.Data.state -eq 'REPAIR' -and [int]$Run.Data.repairCycles -le [int]$Run.Data.limits.maxRepairCycles -and [int]$Run.Data.turns -lt [int]$Run.Data.limits.maxTurns){
         return [pscustomobject]@{Allowed=$false;Reason='the latest verification failure is still repairable within the remaining budget'}
     }
     if([string]$Run.Data.state -eq 'IMPLEMENT' -and [bool]$Run.Data.changed -and -not [bool]$Run.Data.verificationPassed -and [int]$Run.Data.turns -lt [int]$Run.Data.limits.maxTurns){
         return [pscustomobject]@{Allowed=$false;Reason='repository changes still require verification or repair'}
+    }
+    if([bool]$Run.Data.changed -and -not [bool]$Run.Data.verificationPassed -and [int]$Run.Data.turns -lt [int]$Run.Data.limits.maxTurns -and [int]$Run.Data.toolCalls -lt [int]$Run.Data.limits.maxToolCalls){
+        return [pscustomobject]@{Allowed=$false;Reason='available repository tools can still inspect, repair, and verify the current changes'}
     }
     return [pscustomobject]@{Allowed=$true;Reason=$null}
 }
