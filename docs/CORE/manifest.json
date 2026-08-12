@@ -1,0 +1,24 @@
+{
+  "package": "lsda-spec-pack-v2",
+  "version": "2.0-draft",
+  "purpose": "Modular, token-conscious specification pack for evolving Local Coding Agent into LSDA",
+  "documents": [
+    "README.md",
+    "00-MASTER-SPEC.md",
+    "01-RUNTIME-STATE-MACHINE.md",
+    "02-PROGRESS-LIMITS-FALLBACK.md",
+    "03-MEMORY-CONTEXT-ARTIFACTS.md",
+    "04-CONTEXT-ROUTING-AND-DISTRIBUTION.md",
+    "05-MODEL-ROUTING-AND-RESOURCES.md",
+    "06-SAFE-CHANGES-PERMISSIONS-CONCURRENCY.md",
+    "07-VERIFICATION-DONE-EVIDENCE.md",
+    "08-SDD-ROLES-AND-TRACEABILITY.md",
+    "09-TESTING-BENCHMARKS.md",
+    "10-COST-BUDGETS-AND-EFFICIENCY.md",
+    "11-OBSERVABILITY-RECOVERY-DIAGNOSTICS.md",
+    "12-INSTALL-UPGRADE-RELEASE.md",
+    "13-IMPLEMENTATION-ROADMAP.md",
+    "14-REFERENCE-SCHEMAS.md"
+  ],
+  "loading_policy": "Always MASTER + only task-relevant subsystem specs"
+}

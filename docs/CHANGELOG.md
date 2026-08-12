@@ -1,5 +1,25 @@
 # Local Coding Agent 1.0.0-dev
 
+## Deterministic personal runtime MVP
+- Native managed runs now persist a compact `run.json` lifecycle and terminal change, verification, and result artifacts.
+- Model-authored `TASK_COMPLETE` is rejected until a repository write and a successful post-change verification command are recorded.
+- Added bounded turns, tokens, tool/shell calls, repair cycles, repeated-action detection, and no-progress termination.
+- Interrupted non-terminal run state is loaded as `RECOVERING`; terminal failures persist a concrete blocker instead of accepting false DONE.
+- Added PowerShell 5.1 regression coverage for lifecycle transitions, false-DONE prevention, recovery, budgets, and watchdog behavior.
+- Corrected native tool guidance so small models rewrite fully-read placeholder files instead of entering stale exact-replacement loops.
+- Raised the bounded per-turn generation ceiling from 2k to 4k tokens so complete Java/Kotlin/frontend edits and behavioral test tool payloads are not truncated; the run-level budget remains authoritative.
+- Compacted successful large write payloads out of active model history while retaining raw transcript evidence, preventing multi-file repair prompts from repeatedly paying for entire generated files.
+- Added explicit line-range/EOF markers to reads, concise-test guidance, and an 80k bounded complex-run budget so models do not reread complete files or stop before verification and repair.
+- Hardened model evaluation against false GO: candidate runs must reach deterministic DONE, and Python fixtures must pass both model-visible regression tests and the independent hidden oracle.
+- Runtime now rejects model-authored BLOCKED while a verification failure remains repairable, permits 20 bounded complex turns, and blocks all pipe/redirection shell suffixes that previously slipped through prefix allowlisting.
+- Write progress now resets stale action-signature counts, closed tools cannot be executed from hallucinated calls, and Ollama streaming chunks without `message` are handled safely with explicit provider errors; native work uses deterministic temperature 0.
+- After three writes to the same path, the next turn exposes only focused shell verification; the threshold leaves room to create required companion tests before preventing costly speculative rewrite loops.
+- Active repair context now receives at most 3.5k characters of repetitive test/build output while the full diagnostic remains in transcript evidence, preserving the 80k run ceiling.
+- Shell-policy failures and verification pressure now provide exact Windows-safe, repository-relative commands for Python, Maven, Gradle, Rust and Node instead of generic retry advice.
+- Python writes now receive immediate AST syntax diagnostics plus deterministic-test checks for missing `pytest` imports and sleep usage, reducing avoidable full-suite repair turns.
+- Failed post-edit diagnostics are now promoted to explicit mandatory repair messages, while successful writes are declared authoritative to stop models from inventing payload corruption.
+- Native calls now rebuild a rolling active context from stable system/task requirements plus the last 6 messages (roughly three action/result pairs); complete history remains in transcript evidence, reserving the 80k budget for final repair verification.
+
 ## Usability/runtime completion pass
 - Managed/headless Continue execution now uses explicit headless stdout mode (`--silent`) and no longer forces the local run into CI mode.
 - Runtime output is redirected to per-run files and polled while the task runs, so recognized file/tool activity is visible before completion.

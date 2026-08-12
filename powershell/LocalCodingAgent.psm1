@@ -34,6 +34,8 @@ $script:AgentRuntimeVersionPath = Join-Path $script:AgentHome 'VERSION'
 $script:AgentModulePath = $PSCommandPath
 $script:NativeLoopPath = Join-Path (Split-Path -Parent $PSCommandPath) 'OllamaAgentLoop.ps1'
 if(Test-Path -LiteralPath $script:NativeLoopPath){. $script:NativeLoopPath}
+$script:MicroRuntimePath = Join-Path (Split-Path -Parent $PSCommandPath) 'MicroRuntime.ps1'
+if(Test-Path -LiteralPath $script:MicroRuntimePath){. $script:MicroRuntimePath}
 $script:WorkflowStatePath = Join-Path (Split-Path -Parent $PSCommandPath) 'WorkflowState.ps1'
 if(Test-Path -LiteralPath $script:WorkflowStatePath){. $script:WorkflowStatePath}
 $script:ArtifactAnalysisPath = Join-Path (Split-Path -Parent $PSCommandPath) 'ArtifactAnalysis.ps1'
@@ -3601,12 +3603,18 @@ function Get-AgentWorkflowSkillPaths {
 
 function Get-AgentNativeSystemPrompt {
     param([Parameter(Mandatory)][string]$WorkflowName,[switch]$ReadOnly)
-    $mutation=if($ReadOnly){'This workflow is READ ONLY. Never call write_file, replace_text, or replace_lines.'}else{'Implement the requested work in the repository. Do not stop after planning or documentation when code is requested. Preserve the project test framework and imports. Use replace_text or replace_lines for existing files; write_file is only for new files.'}
+    $mutation=if($ReadOnly){'This workflow is READ ONLY. Never call write_file, rewrite_file, replace_text, or replace_lines.'}else{'Implement the requested work in the repository. Do not stop after planning or documentation when code is requested. Preserve the project test framework and imports. For an existing short placeholder or a file whose complete content you have read, use rewrite_file. Use replace_text or replace_lines for focused edits in larger existing files. write_file is only for new files.'}
     return @"
 You are Local Coding Agent, an autonomous repository engineering agent on Windows.
 $mutation
 Work in small evidence-driven steps: inspect, change, read every changed region again, run targeted verification, inspect the result, and continue until the task is genuinely complete or blocked. A test command is successful only when the shell tool returns ExitCode: 0; never reinterpret an ERROR or nonzero result as success.
 Use repository tools instead of guessing. Preserve existing user changes. Do not modify dependencies unless the task explicitly requires it. Never claim a command ran unless its tool result proves it.
+Exact public names, signatures, return semantics and boundary rules stated in USER TASK or SUPPLIED REQUIREMENTS EVIDENCE are binding. Never replace them with a more familiar API. Before the first write, identify those exact contracts and implement tests against them.
+Use one command per shell tool call. Do not use shell chaining operators such as &&, ||, or semicolon; inspect one result and choose the next action in the following turn.
+Shell commands already run at the repository root on Windows. Never use cd, /repo, Unix pipes, head, or output redirection; pass repository-relative paths directly to the test/build command.
+Do not report BLOCKED for a test failure or a concrete source/test defect that you can edit. Apply the indicated fix and rerun focused verification while budget remains.
+When a write tool returns OK, the exact payload was persisted; do not claim truncation or corruption without a syntax diagnostic, read evidence, or failing verification. Treat every post-edit `SYNTAX CHECK FAILED` or `TEST QUALITY FAILED` line as an immediate concrete repair requirement.
+Keep implementation and tests concise. Cover each stated behavior and boundary without generating repetitive test cases, helper frameworks, tutorial comments, or APIs not requested by the specification. For a small fixture, prefer at most 12 focused behavioral test cases and keep each edited file below 250 lines unless existing code or explicit requirements justify more.
 The active workflow is /$WorkflowName. Do not start a different workflow and do not ask routine questions discoverable from the repository.
 When finished, emit TASK_COMPLETE on its own line followed by exactly:
 FINAL RESULT: PASS
@@ -3654,7 +3662,7 @@ function Invoke-AgentNativeManagedRun {
     $model=Get-AgentRoleModel 'work'
     $transcriptPath=Join-Path $Evidence.evidenceDirectory 'native-agent-transcript.json'
     Write-Host "  -> Native Ollama agent loop: $model" -ForegroundColor Cyan
-    $result=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model $model -SystemPrompt (Get-AgentNativeSystemPrompt -WorkflowName $WorkflowName -ReadOnly:$ReadOnly) -Task ($taskParts -join "`n`n") -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -TranscriptPath $transcriptPath
+    $result=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model $model -SystemPrompt (Get-AgentNativeSystemPrompt -WorkflowName $WorkflowName -ReadOnly:$ReadOnly) -Task ($taskParts -join "`n`n") -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -TranscriptPath $transcriptPath -RunDirectory $Evidence.evidenceDirectory
     [ordered]@{model=$model;promptTokens=$result.TotalPromptTokens;outputTokens=$result.TotalOutputTokens;totalTokens=([int]$result.TotalPromptTokens+[int]$result.TotalOutputTokens);completed=$result.Completed}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Evidence.evidenceDirectory 'native-usage.json') -Encoding UTF8
     Write-Host "  tokens total: prompt $($result.TotalPromptTokens) - output $($result.TotalOutputTokens)" -ForegroundColor DarkGray
     $output=[string]$result.FinalOutput

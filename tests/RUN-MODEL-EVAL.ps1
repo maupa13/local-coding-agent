@@ -19,7 +19,7 @@ $results=New-Object Collections.Generic.List[object]
 
 $tasks=@{
   'EVAL-NODE-BUGFIX'='Implement REQ-01 through REQ-08 from docs/requirements.md. Read both src and both test files, reproduce failures, fix all root causes, add comprehensive node:test regression coverage, re-read changes, and run npm test until ExitCode: 0. Preserve package.json and CommonJS exports.'
-  'EVAL-PY-FEATURE'='Implement the complete RateLimiter feature from docs/feature.md in src/rate_limiter.py using only the standard library. Replace the placeholder with comprehensive deterministic pytest tests. Verify validation, per-key isolation, exact window boundary and selective reset. Run pytest until it passes.'
+  'EVAL-PY-FEATURE'='Implement the complete RateLimiter feature from docs/feature.md in src/rate_limiter.py using only the standard library. Preserve the exact constructor/method contract. Replace the placeholder with 6-10 concise deterministic pytest tests; explicitly import pytest, use the injected clock for boundary tests, and never sleep. Cover validation, per-key isolation, exact window boundary and selective reset without adding unrequested APIs. Run exactly `python -m pytest -q` until it passes.'
   'EVAL-JAVA-REFACTOR'='Refactor PriceCalculator according to docs/refactor.md. Preserve the public API and all behavior, extract independently testable rule logic without dependencies, and add meaningful JUnit regression tests for boundaries, validation and rounding. Run Maven tests and inspect the final diff.'
   'EVAL-PS-DOCS'='Analyze docs/requirements.md, src/Tools.psm1 and tests. Create AUDIT.md with a compliance matrix for every REQ-PS requirement, exact file:line evidence, severity/risk and minimal remediation. Do not modify implementation or tests.'
 }
@@ -41,7 +41,7 @@ function Invoke-External([string]$File,[string[]]$Arguments,[string]$WorkingDire
 
 foreach($case in @($matrix.scenarios|Where-Object{$Scenario -eq 'All' -or $_.id -eq $Scenario})){
   $fixture=Join-Path $runRoot ([string]$case.fixture)
-  $started=Get-Date;$status='FAIL';$reason='';$diff=''
+  $started=Get-Date;$status='FAIL';$reason='';$diff='';$inputTokens=0;$outputTokens=0;$runtimeStatus='NOT_RUN'
   try{
     & (Join-Path $root 'tests\evals\NEW-MODEL-EVAL-FIXTURE.ps1') -Scenario $case.fixture -Path $fixture
     if($Decomposed -and [string]$case.id -eq 'EVAL-NODE-BUGFIX'){
@@ -52,6 +52,13 @@ foreach($case in @($matrix.scenarios|Where-Object{$Scenario -eq 'All' -or $_.id 
     }else{
       Invoke-AgentWorkflow -Workflow $case.workflow -DisplayWorkflow $case.workflow -Task @($tasks[[string]$case.id]) -Headless -Managed -ProjectRoot $fixture
     }
+    $lastEvidence=& $candidateModule {$script:AgentLastEvidence}
+    $runtimeStatePath=if($lastEvidence){Join-Path ([string]$lastEvidence) 'run.json'}else{''}
+    if(-not $runtimeStatePath -or -not(Test-Path -LiteralPath $runtimeStatePath)){throw 'native runtime state evidence is missing'}
+    $runtimeState=Get-Content -LiteralPath $runtimeStatePath -Raw|ConvertFrom-Json
+    $runtimeStatus=[string]$runtimeState.state
+    $inputTokens=[int]$runtimeState.promptTokens;$outputTokens=[int]$runtimeState.outputTokens
+    if([string]$runtimeState.state -ne 'DONE'){throw "native runtime did not reach DONE: $($runtimeState.state)"}
     $diffFiles=@(& git -C $fixture diff --name-only)
     if($LASTEXITCODE -ne 0){throw 'git diff failed'}
     foreach($required in @($case.mustChange)){if($diffFiles -notcontains [string]$required){throw "model did not change required file: $required"}}
@@ -65,6 +72,7 @@ foreach($case in @($matrix.scenarios|Where-Object{$Scenario -eq 'All' -or $_.id 
       }
       'EVAL-PY-FEATURE' {
         $python=(Get-Command python.exe -ErrorAction Stop).Source
+        Invoke-External $python @('-m','pytest','-q','tests/test_rate_limiter.py') $fixture|Out-Null
         Invoke-External $python @('-m','pytest','-q',(Join-Path $root 'tests\evals\hidden\test_python_feature_hidden.py')) $fixture @{EVAL_PROJECT=$fixture}|Out-Null
       }
       'EVAL-JAVA-REFACTOR' {
@@ -77,7 +85,7 @@ foreach($case in @($matrix.scenarios|Where-Object{$Scenario -eq 'All' -or $_.id 
     }
     $status='PASS'
   }catch{$reason=$_.Exception.Message}
-  $result=[pscustomobject]@{id=$case.id;language=$case.language;status=$status;durationSeconds=[math]::Round(((Get-Date)-$started).TotalSeconds,1);fixture=$fixture;reason=$reason;diff=$diff}
+  $result=[pscustomobject]@{id=$case.id;language=$case.language;status=$status;runtimeStatus=$runtimeStatus;inputTokens=$inputTokens;outputTokens=$outputTokens;totalTokens=($inputTokens+$outputTokens);durationSeconds=[math]::Round(((Get-Date)-$started).TotalSeconds,1);fixture=$fixture;reason=$reason;diff=$diff}
   $results.Add($result);$result|ConvertTo-Json -Depth 8|Set-Content -Encoding UTF8 (Join-Path $runRoot ($case.id+'.json'))
   Write-Host "[$status] $($case.id) · $($result.durationSeconds)s$(if($reason){' · '+$reason})" -ForegroundColor $(if($status -eq 'PASS'){'Green'}else{'Red'})
 }

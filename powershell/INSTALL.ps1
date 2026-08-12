@@ -175,6 +175,7 @@ Copy-Item (Join-Path $PackageRoot 'powershell\LocalCodingAgent.psm1') (Join-Path
 # so private helpers cannot accidentally become part of the supported API.
 Copy-Item (Join-Path $PackageRoot 'powershell\LocalCodingAgent.psd1') (Join-Path $AgentHome 'LocalCodingAgent.psd1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\OllamaAgentLoop.ps1') (Join-Path $AgentHome 'OllamaAgentLoop.ps1') -Force
+Copy-Item (Join-Path $PackageRoot 'powershell\MicroRuntime.ps1') (Join-Path $AgentHome 'MicroRuntime.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\WorkflowState.ps1') (Join-Path $AgentHome 'WorkflowState.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'powershell\ArtifactAnalysis.ps1') (Join-Path $AgentHome 'ArtifactAnalysis.ps1') -Force
 Copy-Item (Join-Path $PackageRoot 'config\work-item-workflows.json') (Join-Path $AgentHome 'work-item-workflows.json') -Force

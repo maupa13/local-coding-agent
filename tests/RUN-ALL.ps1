@@ -55,6 +55,7 @@ Invoke-Test 'regression' 'WORK-ITEM-WORKFLOW' 'tests\VERIFY-WORK-ITEM-WORKFLOW.p
 Invoke-Test 'regression' 'ARTIFACT-ANALYSIS' 'tests\VERIFY-ARTIFACT-ANALYSIS.ps1'
 Invoke-Test 'regression' 'NATIVE-STDERR' 'tests\VERIFY-NATIVE-STDERR.ps1'
 Invoke-Test 'regression' 'NATIVE-OLLAMA-LOOP' 'tests\VERIFY-NATIVE-OLLAMA-LOOP.ps1'
+Invoke-Test 'regression' 'MICRO-RUNTIME' 'tests\VERIFY-MICRO-RUNTIME.ps1'
 Invoke-Test 'regression' 'RELEASE-GATE' 'tests\VERIFY-RELEASE-GATE.ps1'
 Invoke-Test 'regression' 'FIXTURE-GENERATORS' 'tests\VERIFY-FIXTURE-GENERATORS.ps1'
 Invoke-Test 'regression' 'OUTPUT-ISOLATION' 'tests\VERIFY-OUTPUT-ISOLATION.ps1'
