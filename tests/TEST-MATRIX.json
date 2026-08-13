@@ -204,6 +204,20 @@
       "tier": "runtime"
     },
     {
+      "id": "ACC-008",
+      "area": "service-scenarios",
+      "description": "Project service controls persist read directories, render permissions/help/workflows, and keep intent routing aligned with docs/edit usage",
+      "test": "tests/VERIFY-SERVICE-SCENARIOS.ps1",
+      "tier": "runtime"
+    },
+    {
+      "id": "ACC-009",
+      "area": "result-recovery",
+      "description": "A second shell session on the same project recovers the previous run result via /result and persists the recovered compliance matrix",
+      "test": "tests/RUN-RESULT-E2E.ps1",
+      "tier": "runtime"
+    },
+    {
       "id": "REG-020",
       "area": "semantic-recovery",
       "description": "Empty managed model output triggers deterministic recovery instead of false semantic PASS",

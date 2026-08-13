@@ -8,7 +8,7 @@ $root=Split-Path -Parent $PSScriptRoot
 $failed=0
 function Check([string]$Name,[scriptblock]$Test){try{& $Test;Write-Host "[PASS] $Name" -ForegroundColor Green}catch{$script:failed++;Write-Host "[FAIL] $Name - $($_.Exception.Message)" -ForegroundColor Red}}
 $required=@(
- 'VERSION','docs\README.md','docs\USER-GUIDE.md','docs\CHANGELOG.md','docs\BETA-ACCEPTANCE.md','docs\RC-ACCEPTANCE.md','docs\RELEASE-ACCEPTANCE.md','docs\MAINTENANCE.md','docs\HARDWARE-AND-CAPABILITIES.md','docs\POSITIONING-AND-ROADMAP.md','powershell\INSTALL.ps1','powershell\UNINSTALL.ps1','powershell\ACTIVATE.ps1','powershell\IDEA-INTEGRATE.ps1','integrations\IDEA-LAUNCH.ps1',
+ 'VERSION','docs\README.md','docs\USER-GUIDE.md','docs\CHANGELOG.md','docs\BETA-ACCEPTANCE.md','docs\RC-ACCEPTANCE.md','docs\RELEASE-ACCEPTANCE.md','docs\MAINTENANCE.md','docs\HARDWARE-AND-CAPABILITIES.md','docs\POSITIONING-AND-ROADMAP.md','INSTALL.ps1','ACTIVATE.ps1','powershell\INSTALL.ps1','powershell\UNINSTALL.ps1','powershell\ACTIVATE.ps1','powershell\IDEA-INTEGRATE.ps1','integrations\IDEA-LAUNCH.ps1',
  'config\config.yaml','config\config-agent.yaml','config\config-agent-fast.yaml','config\permissions.yaml','config\hardware-profiles.json','config\toolchains.json',
  'powershell\LocalCodingAgent.psm1','powershell\OllamaAgentLoop.ps1','powershell\MicroRuntime.ps1','powershell\WorkflowState.ps1','powershell\ArtifactAnalysis.ps1','config\work-item-workflows.json','workflows\catalog.json',
  'tests\VERIFY-MANAGED-SHELL.ps1','tests\VERIFY-CONTEXT-BUDGET.ps1','tests\VERIFY-ENGINEERING-GUARDS.ps1','tests\VERIFY-QUALITY-ENGINE.ps1','tests\VERIFY-COMPACT-UI.ps1','tests\VERIFY-PRODUCT-CLI.ps1','tests\VERIFY-LAUNCHER-MODELS-SKILLS.ps1','tests\VERIFY-INSTALL-FAIL-CLOSED.ps1','tests\VERIFY-IDEA-INTEGRATION.ps1','tests\VERIFY-MULTIPROJECT-UX.ps1','tests\VERIFY-CODING-CORE.ps1','tests\VERIFY-ENGINEERING-QUALITY.ps1','tests\VERIFY-BETA-RELIABILITY.ps1','tests\VERIFY-REGRESSION-HISTORY.ps1','tests\VERIFY-TEST-MATRIX.ps1','tests\VERIFY-TEST-MATRIX-SCHEMA.ps1','tests\VERIFY-UTF8-CAPTURE.ps1','tests\VERIFY-WRAPPER-FINALIZER.ps1','tests\VERIFY-TERMINAL-COMPLIANCE-REPORT.ps1','tests\VERIFY-COMPLIANCE-REQUIREMENT-EXTRACTION.ps1','tests\VERIFY-COMPLIANCE-FINALIZER-NONZERO.ps1','tests\VERIFY-DIAGNOSTIC-LOGGING.ps1','tests\VERIFY-LOG-ISOLATION.ps1','tests\VERIFY-EXTRACTOR-STAGED-DIAGNOSTICS.ps1','tests\VERIFY-QUALIFY-ARGUMENT-BINDING.ps1','tests\VERIFY-COMPLIANCE-MATRIX-LAYOUT.ps1','tests\VERIFY-DEV-WORKSPACE.ps1','tests\VERIFY-PS51-PATH-CHARS.ps1','tests\VERIFY-FILESYSTEM-FIRST-INVENTORY.ps1','tests\VERIFY-NON-GIT-INVENTORY.ps1','tests\VERIFY-DOC-EDIT-USER-JOURNEY.ps1','tests\VERIFY-DOC-EDIT-ROUTING.ps1','tests\VERIFY-PROJECT-ROOT-SELECTION.ps1','tests\VERIFY-DEV-STRICTMODE-EXITCODE.ps1','tests\VERIFY-RUN-CHANGE-ACCOUNTING.ps1','tests\VERIFY-UX-RUNTIME.ps1','tests\VERIFY-PS-VARIABLE-COLON-HYGIENE.ps1','tests\VERIFY-COMPLIANCE-RUNTIME-SELFTEST.ps1','tests\VERIFY-STRICTMODE-TEST-HYGIENE.ps1','tests\VERIFY-COMPLIANCE-FINALIZER-CONTRACT.ps1','tests\VERIFY-SANDBOX-VERSION.ps1','tests\VERIFY-HARNESS-SMOKE.ps1','tests\VERIFY-NATIVE-STDERR.ps1','tests\VERIFY-RELEASE-GATE.ps1','tests\VERIFY-EMPTY-CAPTURE-RECOVERY.ps1','tests\VERIFY-FIXTURE-GENERATORS.ps1','tests\VERIFY-OUTPUT-ISOLATION.ps1','tests\RUN-ALL.ps1','tests\RUN-STARTUP-SMOKE.ps1','tests\RUN-REAL-PROJECT-SMOKE.ps1','tests\RUN-CONTINUE-TOOL-SMOKE.ps1','tests\RUN-LIVE-E2E.ps1','tests\RUN-SHELL-E2E.ps1','tests\RUN-RELEASE-QUALIFICATION.ps1','tests\TEST-MATRIX.json','tests\SCENARIO-MATRIX.json','powershell\QUALIFY-RELEASE.ps1','powershell\LocalCodingAgent.psd1','skills\documentation-compliance.md',
@@ -17,7 +17,7 @@ $required=@(
  'powershell\DEV.ps1','tests\VERIFY-ROLE-GIT-GATES.ps1','tests\VERIFY-SPRING-DATA-GOLD.ps1','tests\VERIFY-ANDROID-GOLD.ps1')
 foreach($rel in $required){Check "Required $rel" {if(-not(Test-Path (Join-Path $root $rel))){throw 'missing'}}}
 Check 'PowerShell syntax' {
- $files=Get-ChildItem $root -Recurse -File | Where-Object { $_.Extension -in @('.ps1','.psm1') }
+ $files=Get-ChildItem $root -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.ps1','.psm1') }
  foreach($f in $files){
   $tokens=$null;$parseErrors=$null
   [System.Management.Automation.Language.Parser]::ParseFile($f.FullName,[ref]$tokens,[ref]$parseErrors)|Out-Null
@@ -85,7 +85,7 @@ Check 'Low-prompt safe permission profile' {
  if($t -notmatch 'Bash\(cargo update\*\)'){throw 'dependency guard missing'}
 }
 Check 'No hardcoded user profile' {
- $scanFiles=@(Get-ChildItem $root -Recurse -File | Where-Object {
+ $scanFiles=@(Get-ChildItem $root -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
    $rel=$_.FullName.Substring($root.Length).TrimStart([char[]]@('\','/'))
    $rel -notmatch '^(?i)(?:logs|evidence|results|test-results|artifacts|\.tmp|\.tools|tmp)[\\/]'
  })

@@ -184,6 +184,30 @@
       "id": "SCN-027",
       "name": "Repository contains only root main.md and user says 'отредактируй main.md до статуса полноценной мастер спеки'",
       "expected": "discovery reports main.md as documentation; router selects mutating /docs; the run cannot report PARTIAL/PASS unless main.md or another requested project file is actually changed"
+    },
+    {
+      "id": "SCN-028",
+      "name": "Project service controls and read-directory persistence",
+      "layer": "runtime",
+      "automatedBy": "tests/VERIFY-SERVICE-SCENARIOS.ps1",
+      "asserts": [
+        "project read directories persist and remove cleanly",
+        "/permissions screen reflects the active mode",
+        "/add-read-dir and /read-dirs are available in the UX",
+        "workflow help exposes /result and the standard workflow catalog",
+        "intent routing prefers docs before generic analysis"
+      ]
+    },
+    {
+      "id": "SCN-029",
+      "name": "Result recovery after a previous shell session",
+      "layer": "runtime",
+      "automatedBy": "tests/RUN-RESULT-E2E.ps1",
+      "asserts": [
+        "first shell session writes analysis evidence",
+        "second shell session /result recovers the stored final result",
+        "recovered final result persists COMPLIANCE MATRIX and REQ evidence"
+      ]
     }
   ]
 }

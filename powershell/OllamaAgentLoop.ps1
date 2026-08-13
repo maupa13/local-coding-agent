@@ -59,9 +59,27 @@ function Resolve-NativeAgentPath {
 }
 
 function Test-NativeAgentShellCommand {
-    param([Parameter(Mandatory)][string]$Command)
+    param([Parameter(Mandatory)][string]$Command,[ValidateSet('project','trusted','safe','ask','readonly')][string]$PermissionMode='safe')
     if($Command -match '(?i)(?:&&|\||[<>]|;|`|\$\(|Invoke-Expression|\biex\b|Remove-Item|\brm\b|\bdel\b|\brmdir\b|git\s+(?:reset|clean|checkout|restore|commit|push|rebase|merge)|shutdown|Restart-Computer|Stop-Computer)'){return $false}
-    return $Command -match '^(?i)\s*(?:git\s+(?:status|diff|log|show)|(?:\.\\)?gradlew(?:\.bat)?\s+|mvn(?:\.cmd)?\s+|npm(?:\.cmd)?\s+(?:test|run\s+|--prefix\s+)|node\s+--test|python(?:\.exe)?\s+-m\s+(?:pytest|unittest|ruff|flake8|pylint)|(?:pytest|ruff|flake8|pylint)(?:\s+|$)|cargo\s+(?:check|test|build|clippy|fmt)|dotnet\s+(?:test|build)|go\s+test|powershell(?:\.exe)?\s+-NoProfile\s+-File\s+\.\\tests\\)'
+    $managed=$Command -match '^(?i)\s*(?:git\s+(?:status|diff|log|show)|(?:\.\\)?gradlew(?:\.bat)?\s+|mvn(?:\.cmd)?\s+|npm(?:\.cmd)?\s+(?:test|run\s+|--prefix\s+)|node\s+--test|python(?:\.exe)?\s+-m\s+(?:pytest|unittest|ruff|flake8|pylint)|(?:pytest|ruff|flake8|pylint)(?:\s+|$)|cargo\s+(?:check|test|build|clippy|fmt)|dotnet\s+(?:test|build)|go\s+test|powershell(?:\.exe)?\s+-NoProfile\s+-File\s+\.\\tests\\)'
+    if($managed){return $true}
+    if($PermissionMode -notin @('project','trusted')){return $false}
+    # Project permissions may run repository-local lifecycle and verification
+    # scripts. Absolute paths, parent traversal and shell metacharacters were
+    # rejected above, so this does not broaden execution outside the project.
+    return $Command -match '^(?i)\s*(?:&\s+)?(?:powershell(?:\.exe)?\s+-NoProfile\s+-File\s+)?["'']?\.\\(?!.*\.\.)[^"'']+\.(?:ps1|cmd|bat)["'']?(?:\s+.*)?$'
+}
+
+function Repair-NativeAgentShellCommand {
+    param([string]$Command)
+    if([string]::IsNullOrWhiteSpace($Command)){return $Command}
+    $candidate=$Command.Trim()
+    # Small models often append Unix output limiting to an otherwise valid
+    # Windows verification command. Preserve the command and its real exit
+    # status by removing only this known presentation suffix.
+    $candidate=[regex]::Replace($candidate,'(?i)\s+2>&1\s*\|\s*(?:head(?:\.exe)?\s+(?:-n\s+)?-?\d+|Select-Object\s+-First\s+\d+)\s*$','')
+    $candidate=[regex]::Replace($candidate,'(?i)\s+2>&1\s*$','')
+    return $candidate.Trim()
 }
 
 function Get-NativeAgentLintCommand {
@@ -171,7 +189,8 @@ function Invoke-NativeAgentTool {
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)]$Arguments,
         [Parameter(Mandatory)][string]$RepositoryRoot,
-        [switch]$ReadOnly,[switch]$AllowDependencyChanges,[int]$CommandTimeoutSeconds=300
+        [switch]$ReadOnly,[switch]$AllowDependencyChanges,[int]$CommandTimeoutSeconds=300,
+        [ValidateSet('project','trusted','safe','ask','readonly')][string]$PermissionMode='safe'
     )
     $output='';$changed=$false
     switch($Name){
@@ -280,7 +299,7 @@ function Invoke-NativeAgentTool {
         'shell' {
             if($ReadOnly -and ([string](Get-NativeAgentArgument $Arguments 'command')) -notmatch '^(?i)\s*git\s+(?:status|diff|log|show)'){throw 'Only read-only Git shell commands are enabled in read-only mode'}
             $command=[string](Get-NativeAgentArgument $Arguments 'command')
-            if(-not(Test-NativeAgentShellCommand $command)){
+            if(-not(Test-NativeAgentShellCommand $command -PermissionMode $PermissionMode)){
                 $example=if($command -match '(?i)pytest|\.py\b'){'python -m pytest -q'}elseif($command -match '(?i)gradle'){'gradlew.bat test'}elseif($command -match '(?i)mvn|java'){'mvn.cmd test'}elseif($command -match '(?i)cargo|rust'){'cargo test'}elseif($command -match '(?i)npm|node'){'npm test'}else{'git diff --check'}
                 $readHint=if($command -match '(?i)^\s*(?:cat|head|tail|type|Get-Content|python\s+[^\s]+\.py)\b'){' To inspect a file, call the read_file tool with path/start_line/end_line; shell is intentionally not a file reader.'}else{''}
                 throw "Shell command is outside the managed allowlist: $command.$readHint Run from the existing repository root with no cd, /repo, pipes, redirection, or chaining. Allowed verification example: $example"
@@ -379,7 +398,7 @@ function Test-NativeAgentTaskAcceptance {
             }
         }
     }
-    if($Task -match '(?i)(\d+)\s*-\s*(\d+)\s+(?:[a-z][a-z0-9_-]*\s+){0,5}tests?\b'){
+    if($Task -match '(?i)(\d+)\s*-\s*(\d+)\s+[^\r\n.]{0,120}?tests?\b'){
         $minimum=[int]$Matches[1];$maximum=[int]$Matches[2];$count=0
         foreach($file in $testFiles){
             $text=Get-Content -LiteralPath $file.FullName -Raw -ErrorAction SilentlyContinue
@@ -477,6 +496,7 @@ function Invoke-NativeOllamaAgentLoop {
         [Parameter(Mandatory)][string]$SystemPrompt,[Parameter(Mandatory)][string]$Task,
         [scriptblock]$ChatInvoker=${function:Invoke-OllamaNativeChat},[int]$MaxTurns=24,[switch]$ReadOnly,[switch]$Quiet,
         [string]$TranscriptPath,[string]$RunDirectory,[switch]$AllowDependencyChanges,
+        [ValidateSet('project','trusted','safe','ask','readonly')][string]$PermissionMode='safe',
         [int]$MaxToolCalls=48,[int]$MaxShellCalls=12,[int]$MaxRepairCycles=3,[int]$MaxNoProgressActions=6,[int]$MaxSameActionRepeats=3,[int]$MaxTokens=80000
     )
     if(-not(Get-Command New-LsdaMicroRun -ErrorAction SilentlyContinue)){
@@ -515,7 +535,10 @@ function Invoke-NativeOllamaAgentLoop {
     }
     $initialTask=$(if($snapshot){$Task+"`n`n"+$snapshot}else{$Task})+$modeRequirement+$lintRequirement+$timeTestRequirement+$testScopeRequirement
     [void]$messages.Add([ordered]@{role='user';content=$initialTask})
-    $requiredComplianceIds=@([regex]::Matches($initialTask,'(?i)REQ[-\u2010-\u2015]?\d{2}')|ForEach-Object{($_.Value -replace '[\u2010-\u2015]','-').ToUpperInvariant()}|Select-Object -Unique)
+    # Only explicit task requirements are mandatory report rows. Repository
+    # snapshot contents may mention unrelated REQ ids and must not silently
+    # expand the user's requested compliance scope.
+    $requiredComplianceIds=@([regex]::Matches($Task,'(?i)REQ[-\u2010-\u2015]?\d{2}')|ForEach-Object{($_.Value -replace '[\u2010-\u2015]','-').ToUpperInvariant()}|Select-Object -Unique)
     $transcript=New-Object Collections.ArrayList;$promptTotal=0;$outputTotal=0;$completed=$false;$final='';$lastToolFingerprint='';$repeatedToolCount=0;$emptyTurnCount=0;$toolSignatureCounts=@{};$writePathCounts=@{};$readPaths=@{};$postEditReadPaths=@{};$repairReadPaths=@{};$investigationCalls=0;$repairReadsRemaining=0;$phaseViolationCount=0;$mustEdit=$false;$mustVerify=$false;$forceFinal=$false
     $declaredReadCount=0
     if($ReadOnly){
@@ -586,8 +609,10 @@ function Invoke-NativeOllamaAgentLoop {
             }
             if($name -eq 'shell'){
                 $shellCommand=[string](Get-NativeAgentArgument $args 'command' '')
-                if($shellCommand -match '^(.*\S)\s+2>&1\s*$'){
-                    if($args -is [Collections.IDictionary]){$args['command']=$Matches[1]}else{$args.command=$Matches[1]}
+                $repairedShellCommand=Repair-NativeAgentShellCommand $shellCommand
+                if($repairedShellCommand -ne $shellCommand){
+                    if($args -is [Collections.IDictionary]){$args['command']=$repairedShellCommand}else{$args.command=$repairedShellCommand}
+                    if(-not $Quiet){Write-Host "      RECOVERED COMMAND: $repairedShellCommand" -ForegroundColor DarkGray}
                 }
             }
             $signature=$name+'|'+($args|ConvertTo-Json -Depth 10 -Compress)
@@ -606,9 +631,11 @@ function Invoke-NativeOllamaAgentLoop {
             $allowedRepairRead=$mustEdit -and $name -eq 'read_file' -and $repairReadsRemaining -gt 0
             $repairReadPath=if($allowedRepairRead){([string](Get-NativeAgentArgument $args 'path' '')).Replace('\','/').ToLowerInvariant()}else{''}
             if($allowedRepairRead -and $repairReadPath -and $repairReadPaths.ContainsKey($repairReadPath)){
-                [void]$messages.Add([ordered]@{role='tool';content='ERROR: this file was already inspected during the current repair cycle. Read the failing test file/line named by the cached verification output, or make the smallest repair edit now.'})
-                [void]$transcript.Add([pscustomobject]@{Turn=$turn;Role='tool';Name=$name;Content='REJECTED: duplicate repair read'})
-                continue
+                # Permit the bounded reread and consume its allowance. Small
+                # local models can lose an earlier file body after verbose
+                # test output was compacted; rejecting the reread forever
+                # creates a deadlock without giving the model edit evidence.
+                [void]$messages.Add([ordered]@{role='user';content='This repair file was already inspected. The reread is allowed and consumes another bounded repair-read slot. Use the fresh content to make the repair; do not request the same read again.'})
             }
             if($mustEdit -and -not $allowedRepairRead -and $name -notin @('write_file','rewrite_file','replace_text','replace_lines')){
                 $phaseViolationCount++
@@ -622,15 +649,14 @@ function Invoke-NativeOllamaAgentLoop {
                 [void]$messages.Add([ordered]@{role='tool';content="ERROR: $phaseReason"})
                 [void]$transcript.Add([pscustomobject]@{Turn=$turn;Role='tool';Name=$name;Content='REJECTED: deterministic edit phase requires one repository change'})
                 if($phaseViolationCount -ge 3){
-                    $forceFinal=$true
-                    Stop-LsdaMicroRun -Run $runtime -Reason 'model repeated a tool outside the deterministic repair phase'
-                    [void]$messages.Add([ordered]@{role='user';content='Tool access is closed after three phase violations. Emit TASK_BLOCKED with the failed-verification and routing evidence.'})
+                    $phaseViolationCount=0
+                    [void]$messages.Add([ordered]@{role='user';content='Three phase violations were rejected, but the run remains active. Stop repeating inspection/verification and call one available edit tool now. BLOCKED is not permitted while the repository edit tools are available.'})
                 }
                 continue
             }
             if(-not $Quiet){Write-Host "    [tool] $name" -ForegroundColor Cyan}
             $toolSucceeded=$false;$toolChanged=$false
-            try{$toolResult=Invoke-NativeAgentTool -Name $name -Arguments $args -RepositoryRoot $RepositoryRoot -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -CommandTimeoutSeconds ([int]$hardware.commandTimeoutSeconds);$toolText=$toolResult.Output;$toolSucceeded=$true;$toolChanged=[bool]$toolResult.Changed;if(-not $Quiet){Write-Host "      OK: $($toolText -split "`n"|Select-Object -First 1)" -ForegroundColor DarkGray}}
+            try{$toolResult=Invoke-NativeAgentTool -Name $name -Arguments $args -RepositoryRoot $RepositoryRoot -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -CommandTimeoutSeconds ([int]$hardware.commandTimeoutSeconds) -PermissionMode $PermissionMode;$toolText=$toolResult.Output;$toolSucceeded=$true;$toolChanged=[bool]$toolResult.Changed;if(-not $Quiet){Write-Host "      OK: $($toolText -split "`n"|Select-Object -First 1)" -ForegroundColor DarkGray}}
             catch{$toolText="ERROR: $($_.Exception.Message)";if(-not $Quiet){Write-Host "      FAIL: $toolText" -ForegroundColor Yellow}}
             if($allowedRepairRead -and $toolSucceeded){
                 if($repairReadPath){$repairReadPaths[$repairReadPath]=$true}
@@ -705,7 +731,16 @@ function Invoke-NativeOllamaAgentLoop {
                 $runtimeBlock=$null;$mustVerify=$true
                 [void]$messages.Add([ordered]@{role='user';content="REPETITIVE EDIT PRESSURE: the same changing edit was applied repeatedly. This is not an external blocker. Stop editing and run the focused repository test now so the deterministic result can drive repair."})
             }
-            if($runtimeBlock -and -not $forceFinal){$forceFinal=$true;Stop-LsdaMicroRun -Run $runtime -Reason $runtimeBlock;[void]$messages.Add([ordered]@{role='user';content="The deterministic runtime stopped tool access: $runtimeBlock. Emit TASK_BLOCKED and report this evidence without claiming completion."})}
+            if($runtimeBlock -in @('identical action repeated without progress','no engineering progress')){
+                # A stalled strategy is not an external blocker. Reset the
+                # heuristic counters and keep the remaining run budget usable.
+                $runtime.SameActionRepeats=0;$runtime.NoProgressActions=0;$runtime.LastAction=$null
+                $toolSignatureCounts=@{};$lastToolFingerprint='';$repeatedToolCount=0
+                [void]$messages.Add([ordered]@{role='user';content="STRATEGY RECOVERY: $runtimeBlock. Tool access remains open. Do not repeat the rejected call; use its recovery hint, choose a different tool/command, and continue toward verified completion."})
+                if(-not $Quiet){Write-Host "      RECOVERY: $runtimeBlock; tools remain open" -ForegroundColor Yellow}
+                $runtimeBlock=$null
+            }
+            if($runtimeBlock -and -not $forceFinal){$forceFinal=$true;Stop-LsdaMicroRun -Run $runtime -Reason $runtimeBlock;[void]$messages.Add([ordered]@{role='user';content="The deterministic runtime exhausted a hard run budget: $runtimeBlock. Emit TASK_BLOCKED and report this evidence without claiming completion."})}
             $fingerprint=$name+'|'+(($args|ConvertTo-Json -Depth 10 -Compress))+'|'+$toolText
             if($fingerprint -eq $lastToolFingerprint -or ($toolText -eq '<no matches>' -and $lastToolFingerprint -like ($name+'|*|<no matches>'))){$repeatedToolCount++}else{$repeatedToolCount=1}
             $lastToolFingerprint=$fingerprint
@@ -718,14 +753,14 @@ function Invoke-NativeOllamaAgentLoop {
                 if(-not $Quiet){Write-Host '      STALL: repeated non-consecutive tool signature; recovery instruction injected' -ForegroundColor Yellow}
             }
             if($signatureCount -ge 5 -and -not $forceFinal){
-                $forceFinal=$true
-                [void]$messages.Add([ordered]@{role='user';content='Tool access is closed after five identical calls. Emit TASK_BLOCKED with the repeated-call evidence; do not claim completion.'})
-                if(-not $Quiet){Write-Host '      STALL CUTOFF: repeated tool signature' -ForegroundColor Yellow}
+                $toolSignatureCounts.Remove($signature)
+                [void]$messages.Add([ordered]@{role='user';content='Five identical calls produced no progress, but the run is continuing. That exact call is stale. Use the recovery command from the tool error, inspect a different concrete target, or make the required edit. Do not claim BLOCKED while tools and run budget remain.'})
+                if(-not $Quiet){Write-Host '      STALL RECOVERY: repeated signature reset; tools remain open' -ForegroundColor Yellow}
             }
             if($repeatedToolCount -ge 6 -and -not $forceFinal){
-                $forceFinal=$true
-                [void]$messages.Add([ordered]@{role='user';content='Tool access is now closed because repeated calls produced no evidence. Using only the evidence already collected, immediately emit TASK_COMPLETE or TASK_BLOCKED followed by the required factual FINAL RESULT report. Do not request or describe another tool call.'})
-                if(-not $Quiet){Write-Host '      STALL CUTOFF: tools disabled; forcing factual final response' -ForegroundColor Yellow}
+                $lastToolFingerprint='';$repeatedToolCount=0
+                [void]$messages.Add([ordered]@{role='user';content='Repeated calls produced no evidence. Tool access remains open: switch to a different concrete action and continue until verified completion or a hard run budget is exhausted.'})
+                if(-not $Quiet){Write-Host '      STALL RECOVERY: fingerprint reset; tools remain open' -ForegroundColor Yellow}
             }
         }
         if(-not $ReadOnly -and $toolCalls.Count -gt 0 -and [bool]$runtime.Data.changed){
@@ -759,6 +794,11 @@ function Invoke-NativeOllamaAgentLoop {
         }
         if($content -match '(?i)\bTASK_COMPLETE\b'){
             $done=Test-LsdaMicroDone $runtime
+            if($done.Allowed -and $ReadOnly -and $requiredComplianceIds.Count -gt 0){
+                $normalizedCompletion=$content -replace '[\u2010-\u2015]','-'
+                $missingCompletionIds=@($requiredComplianceIds|Where-Object{$normalizedCompletion -notmatch [regex]::Escape($_)})
+                if($missingCompletionIds.Count){$done=[pscustomobject]@{Allowed=$false;Reason="read-only compliance report omitted required ids: $($missingCompletionIds -join ', ')"}}
+            }
             if($done.Allowed){
                 $acceptance=Test-NativeAgentTaskAcceptance -RepositoryRoot $RepositoryRoot -Task $Task
                 if(-not $acceptance.Passed){$done=[pscustomobject]@{Allowed=$false;Reason="task acceptance failed: $($acceptance.Reason)"}}
@@ -772,7 +812,13 @@ function Invoke-NativeOllamaAgentLoop {
                 $runtime.Data.git.final=$gitAcceptance.State;$runtime.Data.git.passed=$gitAcceptance.Passed;$runtime.Data.git.reason=$gitAcceptance.Reason;Save-LsdaMicroRun $runtime
                 if(-not $gitAcceptance.Passed){$done=[pscustomobject]@{Allowed=$false;Reason="Git acceptance failed: $($gitAcceptance.Reason)"}}
             }
-            if($done.Allowed){Set-LsdaMicroState $runtime 'DONE';$completed=$true;$final=$content;break}
+            if($done.Allowed){
+                if($ReadOnly -and $readPaths.Count){
+                    $evidenceFiles=@($readPaths.Keys|Sort-Object|ForEach-Object{"- $_"}) -join "`n"
+                    $content+="`n`nEVIDENCE FILES READ`n$evidenceFiles"
+                }
+                Set-LsdaMicroState $runtime 'DONE';$completed=$true;$final=$content;break
+            }
             if([string]$runtime.Data.state -eq 'BLOCKED'){$completed=$false;$final="TASK_BLOCKED`nFINAL RESULT: BLOCKED`nWORKFLOW: native-agent`n`nSUMMARY`nRuntime rejected completion: $($runtime.Data.blocker).";break}
             [void]$messages.Add([ordered]@{role='user';content="Completion was rejected by the deterministic runtime: $($done.Reason). Continue with the required repository action and successful shell verification, or emit TASK_BLOCKED."})
             if(-not $Quiet){Write-Host "    DONE REJECTED: $($done.Reason)" -ForegroundColor Yellow}
@@ -794,12 +840,11 @@ function Invoke-NativeOllamaAgentLoop {
         if($toolCalls.Count -eq 0 -and [string]::IsNullOrWhiteSpace($content)){
             $emptyTurnCount++
             [void]$messages.Add([ordered]@{role='user';content='Your last turn emitted neither text nor a tool call. Immediately perform one concrete repository tool call. If implementation is complete, run the relevant test command first; only then emit TASK_COMPLETE with evidence.'})
-            if($emptyTurnCount -ge 2){$forceFinal=$true}
             if(-not $Quiet){Write-Host "    STALL: empty model turn $emptyTurnCount" -ForegroundColor Yellow}
             if($emptyTurnCount -ge 3){
-                $final="TASK_BLOCKED`nFINAL RESULT: BLOCKED`nWORKFLOW: native-agent`n`nSUMMARY`nModel emitted three consecutive empty turns; wrapper stopped the run without accepting completion."
-                if(-not $Quiet){Write-Host '    STALL CUTOFF: three empty turns; run blocked' -ForegroundColor Yellow}
-                break
+                $emptyTurnCount=0
+                [void]$messages.Add([ordered]@{role='user';content='Three empty turns were recovered without closing tools. Continue now with one concrete repository action; the run will remain active until its hard budget is exhausted.'})
+                if(-not $Quiet){Write-Host '    STALL RECOVERY: empty-turn counter reset; run continues' -ForegroundColor Yellow}
             }
         }else{$emptyTurnCount=0}
         if($toolCalls.Count -eq 0 -and -not[string]::IsNullOrWhiteSpace($content)){

@@ -44,7 +44,7 @@ try{
   if(-not $evidenceSession){throw 'Shell E2E did not persist analysis evidence.'}
   $finalPath=Join-Path $evidenceSession.Directory 'final-result.txt'
   $finalEvidence=if(Test-Path -LiteralPath $finalPath){Get-Content -LiteralPath $finalPath -Raw}else{''}
-  if(([string]$evidenceSession.Session.semanticStatus).ToUpperInvariant() -ne 'PASS' -or $finalEvidence -notmatch '(?i)COMPLIANCE MATRIX'){throw "Shell E2E evidence is not a completed compliance matrix: $finalPath"}
+  if(([string]$evidenceSession.Session.semanticStatus).ToUpperInvariant() -ne 'PASS' -or $finalEvidence -notmatch '(?i)FINAL RESULT:\s*PASS'){throw "Shell E2E evidence is not a completed final result: $finalPath"}
   foreach($id in 1..4){if($finalEvidence -notmatch ('REQ-{0:D2}' -f $id)){throw "Shell E2E evidence omitted REQ-$('{0:D2}' -f $id)."}}
   if($combined -match '(?im)^\s*\[FAIL\]\s+warning:\s+in the working copy'){throw 'Git LF/CRLF warning aborted or surfaced as fatal shell failure.'}
   if($combined -match 'getInputStream\(\) must not be called against a directory'){throw 'Directory-as-file regression returned in shell E2E.'}

@@ -11,7 +11,7 @@ $large=Resolve-NativeAgentHardwareSettings -Configuration $hardwareConfig -VramG
 if($low.profile -ne 'low-vram' -or $balanced.profile -ne 'balanced-12gb' -or $large.profile -ne 'large-vram'){throw '[FAIL] automatic hardware profile selection'}
 $hardwareConfig.mode='balanced-12gb';$hardwareConfig.overrides=[pscustomobject]@{contextTokens=12288;runTokens=60000}
 $custom=Resolve-NativeAgentHardwareSettings -Configuration $hardwareConfig -VramGb 24 -RamGb 64
-if($custom.profile -ne 'balanced-12gb' -or $custom.contextTokens -ne 12288 -or $custom.runTokens -ne 60000 -or $custom.toolCalls -ne 140 -or $custom.commandTimeoutSeconds -ne 180){throw '[FAIL] explicit hardware profile/override'}
+if($custom.profile -ne 'balanced-12gb' -or $custom.contextTokens -ne 12288 -or $custom.runTokens -ne 60000 -or $custom.toolCalls -ne 240 -or $custom.turns -ne 200 -or $custom.commandTimeoutSeconds -ne 180){throw '[FAIL] explicit hardware profile/override'}
 $invalidHardware=$hardwareConfig|ConvertTo-Json -Depth 10|ConvertFrom-Json;$invalidHardware.overrides=[pscustomobject]@{turns=1000}
 try{Resolve-NativeAgentHardwareSettings -Configuration $invalidHardware -VramGb 10 -RamGb 32|Out-Null;throw '[FAIL] unsafe hardware override accepted'}catch{if($_.Exception.Message -eq '[FAIL] unsafe hardware override accepted' -or $_.Exception.Message -notmatch 'outside supported range'){throw '[FAIL] hardware range validation'}}
 $moduleText=Get-Content -LiteralPath (Join-Path $root 'powershell\LocalCodingAgent.psm1') -Raw
@@ -92,6 +92,10 @@ try{
   if($snapshot -notmatch 'test_placeholder.py' -or $snapshot -notmatch 'test_case_6' -or $snapshot -notmatch 'authoritative at turn 1'){throw '[FAIL] bounded initial repository snapshot'}
   if(-not(Test-NativeAgentShellCommand 'pytest')){throw '[FAIL] bare pytest not allowlisted'}
   if(Test-NativeAgentShellCommand 'python -m pytest tests 2>&1 | head -10'){throw '[FAIL] shell pipe/redirection accepted'}
+  if((Repair-NativeAgentShellCommand 'python -m pytest services/core/app/test_observability_service.py 2>&1 | head -50') -ne 'python -m pytest services/core/app/test_observability_service.py'){throw '[FAIL] rejected verification command was not safely recovered'}
+  if(Test-NativeAgentShellCommand '.\VERIFY.ps1' -PermissionMode safe){throw '[FAIL] safe mode accepted arbitrary project script'}
+  if(-not(Test-NativeAgentShellCommand '.\VERIFY.ps1' -PermissionMode project)){throw '[FAIL] project mode rejected repository-local script'}
+  if(Test-NativeAgentShellCommand '..\VERIFY.ps1' -PermissionMode trusted){throw '[FAIL] trusted mode accepted parent traversal'}
   $pytestRun=Invoke-NativeAgentTool -Name 'shell' -Arguments @{command='pytest --version';timeout_seconds=30} -RepositoryRoot $tmp
   if($pytestRun.Output -notmatch 'pytest'){throw '[FAIL] pytest module fallback'}
   try{Invoke-NativeAgentTool -Name 'write_file' -Arguments @{path='created.txt';content='clobber'} -RepositoryRoot $tmp|Out-Null;throw '[FAIL] existing file overwrite accepted'}catch{if($_.Exception.Message -eq '[FAIL] existing file overwrite accepted'){throw};if($_.Exception.Message -notmatch 'rewrite_file'){throw '[FAIL] existing placeholder recovery guidance'}}
@@ -180,6 +184,21 @@ try{
   $complianceResult=Invoke-NativeOllamaAgentLoop -RepositoryRoot $tmp -Model 'fake' -SystemPrompt 'test' -Task 'Analyze documented REQ-01 and REQ-02 compliance.' -ChatInvoker $complianceChat -MaxTurns 4 -ReadOnly -Quiet
   if(-not $complianceResult.Completed -or $complianceResult.FinalOutput -notmatch 'COMPLIANCE MATRIX' -or $script:complianceTurn -ne 2){throw '[FAIL] semantic read-only compliance finalizer'}
 
+  $script:missingReqTurn=0
+  $missingReqChat={param($Request,$OnChunk)
+    $script:missingReqTurn++
+    if($script:missingReqTurn -eq 1){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='read_file';arguments=@{path='loop.txt'}}})};PromptTokens=10;OutputTokens=2}}
+    if($script:missingReqTurn -eq 2){return [pscustomobject]@{Message=@{role='assistant';content="TASK_COMPLETE`nFINAL RESULT: PASS`nREQ-01 PASS";tool_calls=@()};PromptTokens=10;OutputTokens=2}}
+    return [pscustomobject]@{Message=@{role='assistant';content="TASK_COMPLETE`nFINAL RESULT: PASS`nREQ-01 PASS`nREQ-02 FAIL";tool_calls=@()};PromptTokens=10;OutputTokens=2}
+  }
+  $missingReq=Invoke-NativeOllamaAgentLoop -RepositoryRoot $tmp -Model 'fake' -SystemPrompt 'test' -Task 'Analyze REQ-01 and REQ-02.' -ChatInvoker $missingReqChat -MaxTurns 4 -ReadOnly -Quiet
+  if(-not $missingReq.Completed -or $script:missingReqTurn -ne 3 -or $missingReq.FinalOutput -notmatch 'EVIDENCE FILES READ' -or $missingReq.FinalOutput -notmatch 'loop.txt'){throw '[FAIL] incomplete compliance PASS was accepted or exact evidence paths were omitted'}
+
+  Set-Content -LiteralPath (Join-Path $tmp 'test_count.test.js') -Encoding UTF8 -Value ((1..11|ForEach-Object{"test('case $_', () => {});"}) -join "`n")
+  $countAcceptance=Test-NativeAgentTaskAcceptance -RepositoryRoot $tmp -Task 'Add 7-10 concise node:test behavioral tests total.'
+  if($countAcceptance.Passed -or $countAcceptance.Reason -notmatch 'task requires 7-10 tests'){throw "[FAIL] punctuated explicit test-count range was not enforced: $($countAcceptance.Reason)"}
+  Remove-Item -LiteralPath (Join-Path $tmp 'test_count.test.js') -Force
+
   $script:mutationBlockTurn=0
   $mutationBlockChat={param($Request,$OnChunk)
     $script:mutationBlockTurn++
@@ -207,6 +226,19 @@ try{
   if(-not $repairRoute.Completed){throw '[FAIL] failed-verification edit-only route did not complete'}
   if(-not $repairRoute.Completed -or $script:repairRouteTurn -ne 5){throw '[FAIL] failed verification edit-only repair flow'}
 
+  $script:repeatRepairTurn=0
+  $repeatRepairChat={param($Request,$OnChunk)
+    $script:repeatRepairTurn++
+    if($script:repeatRepairTurn -eq 1){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='write_file';arguments=@{path='repeat-repair.txt';content='bad'}}})};PromptTokens=10;OutputTokens=2}}
+    if($script:repeatRepairTurn -eq 2){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='shell';arguments=@{command='npm test'}}})};PromptTokens=10;OutputTokens=2}}
+    if($script:repeatRepairTurn -in 3,4){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='read_file';arguments=@{path='repeat-repair.txt'}}})};PromptTokens=10;OutputTokens=2}}
+    if($script:repeatRepairTurn -eq 5){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='rewrite_file';arguments=@{path='repeat-repair.txt';content='fixed'}}})};PromptTokens=10;OutputTokens=2}}
+    if($script:repeatRepairTurn -eq 6){return [pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@(@{function=@{name='shell';arguments=@{command='git diff --check'}}})};PromptTokens=10;OutputTokens=2}}
+    return [pscustomobject]@{Message=@{role='assistant';content="TASK_COMPLETE`nFINAL RESULT: PASS";tool_calls=@()};PromptTokens=10;OutputTokens=2}
+  }
+  $repeatRepair=Invoke-NativeOllamaAgentLoop -RepositoryRoot $tmp -Model 'fake' -SystemPrompt 'test' -Task 'repair repeated read fixture' -ChatInvoker $repeatRepairChat -MaxTurns 8 -Quiet
+  if(-not $repeatRepair.Completed -or (Get-Content (Join-Path $tmp 'repeat-repair.txt') -Raw) -notmatch 'fixed'){throw '[FAIL] bounded duplicate repair reread deadlocked the agent'}
+
   $script:textToolTurn=0
   $textToolChat={param($Request,$OnChunk)
     $script:textToolTurn++
@@ -224,12 +256,12 @@ try{
     return [pscustomobject]@{Message=@{role='assistant';content="TASK_BLOCKED`nFINAL RESULT: BLOCKED";tool_calls=@()};PromptTokens=10;OutputTokens=2}
   }
   $cycle=Invoke-NativeOllamaAgentLoop -RepositoryRoot $tmp -Model 'fake' -SystemPrompt 'test' -Task 'cycle' -ChatInvoker $cycleChat -MaxTurns 20 -Quiet
-  if($script:cycleTurn -gt 11 -or $cycle.Completed){throw '[FAIL] repeated non-consecutive tool signature cutoff'}
+  if($script:cycleTurn -ne 20 -or $cycle.Completed -or $cycle.FinalOutput -notmatch 'budget exhausted'){throw "[FAIL] repeated tool calls did not continue to the hard run budget: turns=$script:cycleTurn completed=$($cycle.Completed) final=$($cycle.FinalOutput)"}
 
   $script:emptyTurns=0
   $emptyChat={param($Request,$OnChunk)$script:emptyTurns++;[pscustomobject]@{Message=@{role='assistant';content='';tool_calls=@()};PromptTokens=10;OutputTokens=10}}
   $empty=Invoke-NativeOllamaAgentLoop -RepositoryRoot $tmp -Model 'fake' -SystemPrompt 'test' -Task 'empty' -ChatInvoker $emptyChat -MaxTurns 20 -Quiet
-  if($script:emptyTurns -ne 3 -or $empty.Completed -or $empty.FinalOutput -notmatch 'TASK_BLOCKED'){throw '[FAIL] empty-turn fail-fast cutoff'}
+  if($script:emptyTurns -ne 20 -or $empty.Completed -or $empty.FinalOutput -notmatch 'budget exhausted'){throw '[FAIL] empty turns did not continue to the hard run budget'}
 
   Set-Content -LiteralPath (Join-Path $tmp 'verify-pressure.txt') -Encoding UTF8 -Value 'zero'
   $script:pressureTurn=0

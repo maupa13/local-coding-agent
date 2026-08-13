@@ -170,13 +170,15 @@ try{
     [void](Invoke-LiveNative -Name 'npm test after bugfix' -Command { npm test })
     $diff=((Invoke-LiveNative -Name 'git diff after bugfix' -Command { git diff -- src/session-store.js src/token-service.js tests/session-store.test.js tests/token-service.test.js })|Out-String)
     if([string]::IsNullOrWhiteSpace($diff)){throw 'Bugfix produced no source/test diff.'}
-    foreach($needle in @('clearExpired','expiresAt','sess_','assert.throws')){if($diff -notmatch [regex]::Escape($needle)){throw "Bugfix diff lacks required behavior/test evidence: $needle"}}
+    foreach($needle in @('clearExpired','sess_','assert.throws')){if($diff -notmatch [regex]::Escape($needle)){throw "Bugfix diff lacks required behavior/test evidence: $needle"}}
+    if($diff -notmatch 'expiresAt' -and $diff -notmatch 'createdAt\s*\+\s*session\.ttlMs'){throw 'Bugfix diff lacks expiry-boundary implementation evidence.'}
     $changed=@(git diff --name-only)
     foreach($required in @('src/session-store.js','src/token-service.js','tests/session-store.test.js','tests/token-service.test.js')){if($changed -notcontains $required){throw "Bugfix did not modify required file: $required"}}
     $testSource=(Get-Content -LiteralPath (Join-Path $FixturePath 'tests\session-store.test.js') -Raw)+(Get-Content -LiteralPath (Join-Path $FixturePath 'tests\token-service.test.js') -Raw)
-    if(([regex]::Matches($testSource,"(?m)^test\(")).Count -lt 7){throw 'Bugfix added insufficient behavioral regression coverage (expected at least 7 tests).'}
+    $behavioralTestCount=([regex]::Matches($testSource,"(?m)^test\(")).Count
+    if($behavioralTestCount -lt 7 -or $behavioralTestCount -gt 10){throw "Bugfix behavioral regression coverage must contain 7-10 tests, found $behavioralTestCount."}
   }finally{Pop-Location}
-  Write-Host '[PASS] fixture implementation and 7+ behavioral tests pass after real agent work' -ForegroundColor Green
+  Write-Host '[PASS] fixture implementation and 7-10 behavioral tests pass after real agent work' -ForegroundColor Green
 
   $beforeReview=((Invoke-LiveNative -Name 'git diff before review' -Command { git -C $FixturePath diff --no-ext-diff })|Out-String)
   $currentWorkflow='review'

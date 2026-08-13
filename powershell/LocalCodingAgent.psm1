@@ -3301,7 +3301,14 @@ function Show-AgentLastResult {
     }
     $dir=[string]$st.lastEvidenceDirectory
     $final=Join-Path $dir 'final-result.txt'
-    if(Test-Path $final){Get-Content -LiteralPath $final;Write-Host "evidence: $dir" -ForegroundColor DarkGray;return $true}
+    if(Test-Path $final){
+        $text=Get-Content -LiteralPath $final -Raw
+        if(-not [string]::IsNullOrWhiteSpace($text)){
+            Write-Host $text
+        }
+        Write-Host "evidence: $dir" -ForegroundColor DarkGray
+        return $true
+    }
     return $false
 }
 
@@ -3662,7 +3669,7 @@ function Invoke-AgentNativeManagedRun {
     $model=Get-AgentRoleModel 'work'
     $transcriptPath=Join-Path $Evidence.evidenceDirectory 'native-agent-transcript.json'
     Write-Host "  -> Native Ollama agent loop: $model" -ForegroundColor Cyan
-    $result=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model $model -SystemPrompt (Get-AgentNativeSystemPrompt -WorkflowName $WorkflowName -ReadOnly:$ReadOnly) -Task ($taskParts -join "`n`n") -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -TranscriptPath $transcriptPath -RunDirectory $Evidence.evidenceDirectory
+    $result=Invoke-NativeOllamaAgentLoop -RepositoryRoot $RepositoryRoot -Model $model -SystemPrompt (Get-AgentNativeSystemPrompt -WorkflowName $WorkflowName -ReadOnly:$ReadOnly) -Task ($taskParts -join "`n`n") -ReadOnly:$ReadOnly -AllowDependencyChanges:$AllowDependencyChanges -PermissionMode $script:AgentPermissionMode -TranscriptPath $transcriptPath -RunDirectory $Evidence.evidenceDirectory
     [ordered]@{model=$model;promptTokens=$result.TotalPromptTokens;outputTokens=$result.TotalOutputTokens;totalTokens=([int]$result.TotalPromptTokens+[int]$result.TotalOutputTokens);completed=$result.Completed}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $Evidence.evidenceDirectory 'native-usage.json') -Encoding UTF8
     Write-Host "  tokens total: prompt $($result.TotalPromptTokens) - output $($result.TotalOutputTokens)" -ForegroundColor DarkGray
     $output=[string]$result.FinalOutput

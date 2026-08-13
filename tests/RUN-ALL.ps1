@@ -114,9 +114,11 @@ if($Profile -eq 'Release'){
    if($LiveE2E){
      Invoke-Test 'runtime' 'LIVE-E2E' 'tests\RUN-LIVE-E2E.ps1'
      Invoke-Test 'runtime' 'SHELL-E2E' 'tests\RUN-SHELL-E2E.ps1'
+     Invoke-Test 'runtime' 'RESULT-E2E' 'tests\RUN-RESULT-E2E.ps1'
    } else {
      Add-Result 'runtime' 'LIVE-E2E' 'NOT RUN' 0 'Pass -LiveE2E for real model compliance -> bugfix -> test -> review qualification.'
      Add-Result 'runtime' 'SHELL-E2E' 'NOT RUN' 0 'Pass -LiveE2E for natural-language shell routing and /result qualification.'
+     Add-Result 'runtime' 'RESULT-E2E' 'NOT RUN' 0 'Pass -LiveE2E for shell result recovery after a previous session.'
    }
  }
 }
